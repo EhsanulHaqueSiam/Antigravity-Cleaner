@@ -34,14 +34,14 @@ The easiest way to use Antigravity Cleaner is via our one-line terminal command.
 Copy and paste this into your terminal:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/EhsanulHaqueSiam/antigravity-cleaner/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner/main/install.sh | bash
 ```
 
 ### 🪟 Windows (PowerShell)
 Copy and paste this into PowerShell:
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/EhsanulHaqueSiam/antigravity-cleaner/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner/main/install.ps1 | iex
 ```
 
 ---
@@ -52,7 +52,7 @@ If you prefer to build the Electron GUI version or run from source:
 
 1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/EhsanulHaqueSiam/antigravity-cleaner.git
+    git clone https://github.com/EhsanulHaqueSiam/Antigravity-Cleaner.git
     cd antigravity-cleaner
     ```
 
