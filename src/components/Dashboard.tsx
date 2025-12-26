@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Activity, HardDrive, Cpu, CheckCircle2 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useTranslation } from 'react-i18next'
 
 const container = {
     hidden: { opacity: 0 },
@@ -36,7 +37,8 @@ function StatCard({ label, value, icon, color }: any) {
 }
 
 export function Dashboard() {
-    const [cacheSize, setCacheSize] = useState<string>("Calculating...")
+    const { t } = useTranslation()
+    const [cacheSize, setCacheSize] = useState<string>(t('dashboard.calculating'))
     const [status, setStatus] = useState<Record<string, number>>({})
 
     useEffect(() => {
@@ -51,7 +53,7 @@ export function Dashboard() {
             setCacheSize(formatSize(total))
         } catch (e) {
             console.error(e)
-            setCacheSize("Unknown")
+            setCacheSize(t('dashboard.unknown'))
         }
     }
 
@@ -66,8 +68,8 @@ export function Dashboard() {
     return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div>
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent mb-2">System Overview</h2>
-                <p className="text-zinc-400">Real-time system health and performance metrics.</p>
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent mb-2">{t('dashboard.title')}</h2>
+                <p className="text-zinc-400">{t('dashboard.subtitle')}</p>
             </div>
 
             <motion.div
@@ -77,20 +79,20 @@ export function Dashboard() {
                 className="grid grid-cols-1 md:grid-cols-3 gap-4"
             >
                 <StatCard
-                    label="System Status"
-                    value="Optimal"
+                    label={t('dashboard.systemStatus')}
+                    value={t('dashboard.optimal')}
                     icon={<Activity size={20} />}
                     color="text-green-500"
                 />
                 <StatCard
-                    label="Cache Detected"
+                    label={t('dashboard.cacheDetected')}
                     value={cacheSize}
                     icon={<HardDrive size={20} />}
                     color="text-blue-500"
                 />
                 <StatCard
-                    label="Processes"
-                    value="Active"
+                    label={t('dashboard.processes')}
+                    value={t('dashboard.active')}
                     icon={<Cpu size={20} />}
                     color="text-purple-500"
                 />
@@ -110,10 +112,10 @@ export function Dashboard() {
                             <div className="p-2 rounded-full bg-green-500/10 text-green-500">
                                 <CheckCircle2 size={24} />
                             </div>
-                            <h3 className="text-xl font-bold text-white">All Systems Operational</h3>
+                            <h3 className="text-xl font-bold text-white">{t('dashboard.allSystemsOperational')}</h3>
                         </div>
                         <p className="text-zinc-400 max-w-lg">
-                            Your development environment is running smoothly. No critical issues detected in Antigravity IDE configuration.
+                            {t('dashboard.systemMessage')}
                         </p>
                     </div>
 

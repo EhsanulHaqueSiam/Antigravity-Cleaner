@@ -23,6 +23,10 @@ Antigravity Cleaner is a robust utility designed to keep your development enviro
 - **💻 Cross-Platform TUI**:
     - Beautiful, colorful Terminal User Interface for **Windows, Linux, and macOS**.
     - No GUI required—runs instantly in your terminal.
+    - **New CLI Flags**:
+        - `--quick` / `-q`: Non-interactive mode (cleans all safely).
+        - `--dry-run` / `-d`: Preview what will be deleted.
+        - `--help`: Show usage information.
 
 ---
 

@@ -1,0 +1,23 @@
+{
+    "sidebar": {
+        "dashboard": "Dashboard",
+        "cleaner": "Precision Cleaner",
+        "network": "Network Tools",
+        "backup": "Session Backup",
+        "systemActive": "System Active",
+        "stable": "Stable"
+    },
+    "dashboard": {
+        "title": "System Overview",
+        "subtitle": "Real-time system health and performance metrics.",
+        "systemStatus": "System Status",
+        "optimal": "Optimal",
+        "cacheDetected": "Cache Detected",
+        "processes": "Processes",
+        "active": "Active",
+        "allSystemsOperational": "All Systems Operational",
+        "systemMessage": "Your development environment is running smoothly. No critical issues detected in Antigravity IDE configuration.",
+        "calculating": "Calculating...",
+        "unknown": "Unknown"
+    }
+}

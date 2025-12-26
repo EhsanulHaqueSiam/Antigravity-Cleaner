@@ -1,0 +1,23 @@
+{
+    "sidebar": {
+        "dashboard": "仪表板",
+        "cleaner": "精确清理",
+        "network": "网络工具",
+        "backup": "会话备份",
+        "systemActive": "系统活跃",
+        "stable": "稳定"
+    },
+    "dashboard": {
+        "title": "系统概览",
+        "subtitle": "实时系统健康和性能指标。",
+        "systemStatus": "系统状态",
+        "optimal": "最佳",
+        "cacheDetected": "检测到缓存",
+        "processes": "进程",
+        "active": "活跃",
+        "allSystemsOperational": "所有系统运行正常",
+        "systemMessage": "您的开发环境运行顺畅。在 Antigravity IDE 配置中未检测到关键问题。",
+        "calculating": "计算中...",
+        "unknown": "未知"
+    }
+}

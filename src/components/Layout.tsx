@@ -2,6 +2,7 @@ import { ReactNode } from 'react'
 import { Activity, Trash2, Globe, Shield, Home } from 'lucide-react'
 import { clsx } from 'clsx'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 
 interface SidebarItemProps {
     icon: ReactNode
@@ -42,6 +43,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children, currentTab, onTabChange }: LayoutProps) {
+    const { t } = useTranslation()
     return (
         <div className="flex h-screen bg-black/90 text-white overflow-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-background to-background">
             {/* Sidebar */}
@@ -59,25 +61,25 @@ export function Layout({ children, currentTab, onTabChange }: LayoutProps) {
                 <div className="space-y-1 flex-1">
                     <SidebarItem
                         icon={<Home size={18} />}
-                        label="Dashboard"
+                        label={t('sidebar.dashboard')}
                         active={currentTab === 'dashboard'}
                         onClick={() => onTabChange('dashboard')}
                     />
                     <SidebarItem
                         icon={<Trash2 size={18} />}
-                        label="Precision Cleaner"
+                        label={t('sidebar.cleaner')}
                         active={currentTab === 'cleaner'}
                         onClick={() => onTabChange('cleaner')}
                     />
                     <SidebarItem
                         icon={<Globe size={18} />}
-                        label="Network Tools"
+                        label={t('sidebar.network')}
                         active={currentTab === 'network'}
                         onClick={() => onTabChange('network')}
                     />
                     <SidebarItem
                         icon={<Shield size={18} />}
-                        label="Session Backup"
+                        label={t('sidebar.backup')}
                         active={currentTab === 'backup'}
                         onClick={() => onTabChange('backup')}
                     />
@@ -86,9 +88,9 @@ export function Layout({ children, currentTab, onTabChange }: LayoutProps) {
                 <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50 mt-auto">
                     <div className="flex items-center gap-2 mb-2">
                         <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                        <span className="text-xs font-medium text-zinc-400">System Active</span>
+                        <span className="text-xs font-medium text-zinc-400">{t('sidebar.systemActive')}</span>
                     </div>
-                    <p className="text-[10px] text-zinc-600">v1.2.0 • Stable</p>
+                    <p className="text-[10px] text-zinc-600">v1.2.0 • {t('sidebar.stable')}</p>
                 </div>
             </div>
 

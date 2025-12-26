@@ -1,0 +1,23 @@
+{
+    "sidebar": {
+        "dashboard": "Panel de Control",
+        "cleaner": "Limpieza de Precisión",
+        "network": "Herramientas de Red",
+        "backup": "Copia de Seguridad",
+        "systemActive": "Sistema Activo",
+        "stable": "Estable"
+    },
+    "dashboard": {
+        "title": "Resumen del Sistema",
+        "subtitle": "Métricas de salud y rendimiento del sistema en tiempo real.",
+        "systemStatus": "Estado del Sistema",
+        "optimal": "Óptimo",
+        "cacheDetected": "Caché Detectada",
+        "processes": "Procesos",
+        "active": "Activo",
+        "allSystemsOperational": "Todos los Sistemas Operativos",
+        "systemMessage": "Su entorno de desarrollo funciona sin problemas. No se detectaron problemas críticos en la configuración de Antigravity IDE.",
+        "calculating": "Calculando...",
+        "unknown": "Desconocido"
+    }
+}
