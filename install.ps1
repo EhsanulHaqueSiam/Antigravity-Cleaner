@@ -10,7 +10,7 @@ Write-Host "==============================" -ForegroundColor DarkGray
 Write-Host ""
 
 # Repo Info
-$Repo = "EhsanulHaqueSiam/antigravity-cleaner"
+$Repo = "EhsanulHaqueSiam/Antigravity-Cleaner"
 $LatestReleaseUrl = "https://api.github.com/repos/$Repo/releases/latest"
 
 $DownloadUrl = "https://raw.githubusercontent.com/$Repo/main/scripts/cleanup_antigravity.ps1"

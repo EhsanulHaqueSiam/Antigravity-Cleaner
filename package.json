@@ -37,9 +37,9 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "tsc && electron-vite build",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux",
+    "build:win": "npm run build && electron-builder --win -p never",
+    "build:mac": "npm run build && electron-builder --mac -p never",
+    "build:linux": "npm run build && electron-builder --linux -p never",
     "preview": "electron-vite preview"
   },
   "dependencies": {

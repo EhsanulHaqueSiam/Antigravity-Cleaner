@@ -7,7 +7,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Repo Info (Placeholder)
-REPO="EhsanulHaqueSiam/antigravity-cleaner"
+REPO="EhsanulHaqueSiam/Antigravity-Cleaner"
 VERSION="latest"
 
 echo -e "\n${CYAN}🚀 Antigravity Cleaner Installer${NC}"
