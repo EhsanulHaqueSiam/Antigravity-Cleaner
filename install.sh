@@ -51,7 +51,7 @@ chmod +x "$FILENAME"
 
 echo -e "\n${GREEN}✔ Download successful! Launching...${NC}\n"
 # Run immediately
-./"$FILENAME"
+./"$FILENAME" < /dev/tty
 
 # Cleanup (Optional: remove script after run? User typically wants to keep it or run via one-liner)
 # rm "$FILENAME"
