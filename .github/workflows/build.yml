@@ -44,16 +44,16 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: npm run build:mac
 
-      # Upload Artifacts (This makes them available in the Actions tab)
+      - name: List dist contents (Debug)
+        run: ls -R dist || echo "dist dir not found"
+
+      # Upload Artifacts (Broader pattern)
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Antigravity-Cleaner-${{ matrix.os }}
-          path: |
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.dmg
-          if-no-files-found: ignore
+          path: dist/*
+          if-no-files-found: warn
 
   release:
     needs: build
@@ -71,11 +71,9 @@ jobs:
         run: ls -R artifacts
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
-             artifacts/**/*.exe
-             artifacts/**/*.AppImage
-             artifacts/**/*.dmg
+             artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
