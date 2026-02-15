@@ -33,9 +33,7 @@ $ANTIGRAVITY_DIR  = "$GEMINI_DIR\antigravity"
 $BROWSER_PROF_DIR = "$GEMINI_DIR\antigravity-browser-profile"
 $BP_DEF           = "$BROWSER_PROF_DIR\Default"
 $BACKUP_DIR       = "$GEMINI_DIR\backups"
-$PROFILES_DIR     = "$env:USERPROFILE\.antigravity-profiles"
-$ACTIVE_FILE      = "$PROFILES_DIR\.active"
-$BOX_W            = 62
+$BOX_W            = 76
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Help
@@ -192,13 +190,6 @@ function Read-Choice {
     Write-Host $Prompt -NoNewline -ForegroundColor Cyan
     $userInput = Read-Host
     return $userInput.Trim()
-}
-
-function Get-ActiveProfile {
-    if (Test-Path $ACTIVE_FILE) {
-        return (Get-Content $ACTIVE_FILE -Raw -ErrorAction SilentlyContinue).Trim()
-    }
-    return "default"
 }
 
 function Draw-ProgressBar {
@@ -887,171 +878,299 @@ function Menu-Usage {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  6. Account Dashboard
+#  6. Account Dashboard (API-based per-model quota)
 # ═══════════════════════════════════════════════════════════════════════════════
-$LABEL_FILE = ".antigravity-label"
-$script:GemCacheTime = [datetime]::MinValue
-$script:GemCacheResult = ""
-$script:CluCacheTime = [datetime]::MinValue
-$script:CluCacheResult = ""
 
-function Get-Email {
-    param([string]$Dir)
-    $f = Join-Path $Dir $LABEL_FILE
-    if (Test-Path $f) { return (Get-Content $f -Raw -ErrorAction SilentlyContinue).Trim() }
-    return ""
+function Draw-QuotaBar {
+    param([int]$Fill, [int]$Empty, [string]$BarCol)
+    $barColor = switch ($BarCol) { "g" {"Green"} "y" {"Yellow"} "o" {"DarkYellow"} "r" {"Red"} default {"Green"} }
+    if ($Fill -gt 0) { Write-Host ([string][char]0x2588 * $Fill) -NoNewline -ForegroundColor $barColor }
+    if ($Empty -gt 0) { Write-Host ([string][char]0x2591 * $Empty) -NoNewline -ForegroundColor DarkGray }
 }
 
-function Set-Email {
-    param([string]$Dir, [string]$Email)
-    Set-Content (Join-Path $Dir $LABEL_FILE) $Email -NoNewline
-}
+function Draw-ModelLine {
+    param([string]$Name, [int]$Fill, [int]$Empty, [string]$Pct, [string]$Reset, [string]$BarCol)
+    $paddedName = $Name.PadRight(26)
+    $paddedPct = $Pct.PadLeft(9)
+    $pctColor = if ($Pct -eq "Exhausted") { "Red" } else { "White" }
 
-function Count-MonthSessions {
-    param([string]$Dir)
-    $cdir = Join-Path $Dir "antigravity\conversations"
-    if (-not (Test-Path $cdir)) { return 0 }
-    $now = Get-Date
-    $cnt = 0
-    Get-ChildItem $cdir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        if (($now - $_.LastWriteTime).TotalSeconds -lt 2592000) { $cnt++ }
+    # Calculate visible length for padding
+    $visLen = 4 + 26 + 1 + ($Fill + $Empty) + 2 + 9
+    if ($Reset) { $visLen += 3 + $Reset.Length }
+    $padLen = $BOX_W - 4 - $visLen
+    if ($padLen -lt 0) { $padLen = 0 }
+
+    Write-Host ("  " + [char]0x2502 + " ") -NoNewline -ForegroundColor DarkGray
+    Write-Host ("    " + $paddedName + " ") -NoNewline -ForegroundColor DarkGray
+    Draw-QuotaBar -Fill $Fill -Empty $Empty -BarCol $BarCol
+    Write-Host ("  " + $paddedPct) -NoNewline -ForegroundColor $pctColor
+    if ($Reset) {
+        Write-Host (" " + [char]0x2192 + " ") -NoNewline -ForegroundColor DarkGray
+        Write-Host $Reset -NoNewline -ForegroundColor Yellow
     }
-    return $cnt
+    Write-Host (" " * [math]::Max($padLen, 0) + " " + [char]0x2502) -ForegroundColor DarkGray
 }
 
-function Check-ModelStatus {
-    param([string]$Url, [ref]$CacheTime, [ref]$CacheResult)
-    $now = Get-Date
-    if (($now - $CacheTime.Value).TotalSeconds -lt 30 -and $CacheResult.Value -ne "") {
-        return $CacheResult.Value
-    }
+function Fetch-AllQuotas {
+    param([string]$AccountsFile)
+
+    $CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+    $CLIENT_SECRET = "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"
+    $TOKEN_URL = "https://oauth2.googleapis.com/token"
+    $QUOTA_URL = "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+    $BAR_W = 20
+
+    $SKIP_PREFIXES = @("tab_", "chat_")
+    $GROUP_DEFS = @(
+        @{ Name = "Gemini 3"; Prefix = "gemini-3"; Order = @("gemini-3-pro-high","gemini-3-pro-low","gemini-3-flash","gemini-3-pro-image") },
+        @{ Name = "Gemini 2.5"; Prefix = "gemini-2.5"; Order = @("gemini-2.5-pro","gemini-2.5-flash","gemini-2.5-flash-thinking","gemini-2.5-flash-lite") },
+        @{ Name = "Claude"; Prefix = "claude"; Order = @("claude-sonnet-4-5","claude-sonnet-4-5-thinking","claude-opus-4-5-thinking","claude-opus-4-6-thinking") }
+    )
+
     try {
-        $r = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-        $code = $r.StatusCode
-        $CacheTime.Value = $now
-        if ($code -in 200,301,302,303,404) { $CacheResult.Value = "available" }
-        elseif ($code -eq 429) { $CacheResult.Value = "limited" }
-        elseif ($code -eq 403) { $CacheResult.Value = "forbidden" }
-        else { $CacheResult.Value = "unknown" }
+        $data = Get-Content $AccountsFile -Raw | ConvertFrom-Json
     } catch {
-        $CacheTime.Value = $now
-        $status = $_.Exception.Response.StatusCode.value__
-        if ($status -eq 429) { $CacheResult.Value = "limited" }
-        elseif ($status -eq 403) { $CacheResult.Value = "forbidden" }
-        else { $CacheResult.Value = "unknown" }
+        return @("ERROR:Failed to parse accounts file", "END")
     }
-    return $CacheResult.Value
+
+    $accounts = $data.accounts
+    $activeIdx = if ($null -ne $data.activeIndex) { $data.activeIndex } else { 0 }
+    $results = @()
+
+    for ($i = 0; $i -lt $accounts.Count; $i++) {
+        $acct = $accounts[$i]
+        $email = $acct.email
+        $isActive = ($i -eq $activeIdx)
+        $results += "ACCOUNT:${email}`t${isActive}"
+
+        if ([string]::IsNullOrEmpty($acct.refreshToken)) {
+            $results += "ERROR:No refresh token"
+            continue
+        }
+
+        # Exchange token
+        $tokenBody = "client_id=$CLIENT_ID&client_secret=$CLIENT_SECRET&refresh_token=$($acct.refreshToken)&grant_type=refresh_token"
+        try {
+            $tokenResp = Invoke-RestMethod -Uri $TOKEN_URL -Method POST -Body $tokenBody -ContentType "application/x-www-form-urlencoded" -TimeoutSec 10 -ErrorAction Stop
+            $accessToken = $tokenResp.access_token
+        } catch {
+            $results += "ERROR:Authentication failed"
+            continue
+        }
+
+        if ([string]::IsNullOrEmpty($accessToken)) {
+            $results += "ERROR:Authentication failed"
+            continue
+        }
+
+        # Fetch quotas
+        $headers = @{
+            "Authorization" = "Bearer $accessToken"
+            "User-Agent" = "antigravity/1.11.5 windows/x86_64"
+            "X-Goog-Api-Client" = "google-cloud-sdk vscode_cloudshelleditor/0.1"
+            "Client-Metadata" = '{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}'
+        }
+        $quotaData = $null
+        foreach ($ep in @($QUOTA_URL, $QUOTA_URL.Replace("daily-cloudcode-pa", "cloudcode-pa"))) {
+            try {
+                $quotaData = Invoke-RestMethod -Uri $ep -Method POST -Headers $headers -Body "{}" -ContentType "application/json" -TimeoutSec 15 -ErrorAction Stop
+                break
+            } catch { continue }
+        }
+
+        if ($null -eq $quotaData) {
+            $results += "ERROR:Failed to fetch quotas"
+            continue
+        }
+
+        # Categorize models
+        $groups = @{}
+        foreach ($gd in $GROUP_DEFS) { $groups[$gd.Name] = @() }
+        $groups["Other"] = @()
+
+        $modelNames = $quotaData.models.PSObject.Properties.Name
+        foreach ($mname in $modelNames) {
+            $skip = $false
+            foreach ($sp in $SKIP_PREFIXES) {
+                if ($mname.StartsWith($sp)) { $skip = $true; break }
+            }
+            if ($skip) { continue }
+
+            $minfo = $quotaData.models.$mname
+            $qi = $minfo.quotaInfo
+            $rf = $qi.remainingFraction
+            $rt = $qi.resetTime
+
+            $placed = $false
+            foreach ($gd in $GROUP_DEFS) {
+                if ($mname.StartsWith($gd.Prefix)) {
+                    $groups[$gd.Name] += @{ Name = $mname; RF = $rf; RT = $rt }
+                    $placed = $true
+                    break
+                }
+            }
+            if (-not $placed) {
+                $groups["Other"] += @{ Name = $mname; RF = $rf; RT = $rt }
+            }
+        }
+
+        # Sort by predefined order
+        foreach ($gd in $GROUP_DEFS) {
+            $gn = $gd.Name
+            $order = $gd.Order
+            $groups[$gn] = $groups[$gn] | Sort-Object {
+                $idx = [array]::IndexOf($order, $_.Name)
+                if ($idx -lt 0) { 999 } else { $idx }
+            }
+        }
+
+        # Output
+        $groupOrder = @($GROUP_DEFS | ForEach-Object { $_.Name }) + @("Other")
+        foreach ($gn in $groupOrder) {
+            $entries = $groups[$gn]
+            if ($entries.Count -eq 0) { continue }
+            $results += "GROUP:$gn"
+            foreach ($entry in $entries) {
+                $rf = $entry.RF
+                $rt = $entry.RT
+                if ($null -eq $rf) {
+                    $pct = "Exhausted"; $fv = 0.0
+                } else {
+                    $fv = [double]$rf
+                    $pct = "{0:F1}%" -f ($fv * 100)
+                }
+                $fill = [math]::Max(0, [math]::Min($BAR_W, [math]::Round($fv * $BAR_W)))
+                $empty = $BAR_W - $fill
+                $color = if ($null -eq $rf) { "r" } elseif ($fv -lt 0.3) { "o" } elseif ($fv -lt 0.6) { "y" } else { "g" }
+
+                $resetStr = ""
+                if (($null -eq $rf -or $fv -lt 1.0) -and $rt) {
+                    try {
+                        $rdt = [datetime]::Parse($rt).ToUniversalTime()
+                        $secs = [int]($rdt - [datetime]::UtcNow).TotalSeconds
+                        if ($secs -gt 0) {
+                            $h = [math]::Floor($secs / 3600)
+                            $m = [math]::Floor(($secs % 3600) / 60)
+                            $resetStr = if ($h -gt 0) { "${h}h ${m}m" } else { "${m}m" }
+                        }
+                    } catch {}
+                }
+                $results += "MODEL:$($entry.Name)`t$fill`t$empty`t$pct`t$resetStr`t$color"
+            }
+            $results += "GROUPEND"
+        }
+    }
+
+    $results += "END"
+    return $results
 }
 
 function Menu-Accounts {
-    while ($true) {
+    # Find accounts JSON
+    $acctJson = ""
+    $p1 = "$env:USERPROFILE\.config\opencode\antigravity-accounts.json"
+    $p2 = "$env:USERPROFILE\.config\antigravity-proxy\accounts.json"
+    # Also check Linux-style paths under WSL home or APPDATA
+    $p3 = "$env:APPDATA\opencode\antigravity-accounts.json"
+    $p4 = "$env:APPDATA\antigravity-proxy\accounts.json"
+    foreach ($p in @($p1, $p2, $p3, $p4)) {
+        if (Test-Path $p) { $acctJson = $p; break }
+    }
+
+    if ([string]::IsNullOrEmpty($acctJson)) {
         Show-Header
-
-        $active = Get-ActiveProfile
-
-        if (-not (Test-Path $PROFILES_DIR)) {
-            New-Item -ItemType Directory -Force -Path $PROFILES_DIR | Out-Null
-        }
-
-        # ── Reset countdown ──
-        $now = Get-Date
-        $dim = [DateTime]::DaysInMonth($now.Year, $now.Month)
-        $dayNum = $now.Day
-        $resetDate = (Get-Date -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(1)
-        $resetStr = $resetDate.ToString("MMM dd, yyyy hh:mm tt")
-        $timeLeft = $resetDate - $now
-        $dLeft = [math]::Floor($timeLeft.TotalDays)
-        $hLeft = $timeLeft.Hours
-        $mLeft = $timeLeft.Minutes
-        $countdown = "${dLeft}d ${hLeft}h ${mLeft}m"
-
         Draw-BoxTop
         Draw-BoxTitle "Account Dashboard"
         Draw-BoxEmpty
-        Draw-BoxLine "  Rate Limit Resets   $resetStr" -Color Green
-        Draw-BoxLine "  Countdown           $countdown" -Color Yellow
+        Draw-BoxLine "  No accounts found." -Color Yellow
         Draw-BoxEmpty
-        $pbar = Draw-ProgressBar -Current $dayNum -Total $dim -Width 30
-        Draw-BoxLine "  $pbar" -Color Green
+        Draw-BoxLine "  Expected config at:" -Color DarkGray
+        Draw-BoxLine "    ~/.config/opencode/antigravity-accounts.json" -Color DarkGray
+        Draw-BoxLine "    ~/.config/antigravity-proxy/accounts.json" -Color DarkGray
         Draw-BoxEmpty
+        Draw-BoxBot
+        Wait-Key; return
+    }
+
+    while ($true) {
+        Show-Header
+        Draw-BoxTop
+        Draw-BoxTitle "Account Dashboard"
+        Draw-BoxEmpty
+        Draw-BoxLine "  Fetching quotas..." -Color DarkGray
+        Draw-BoxEmpty
+        Draw-BoxBot
+
+        # Fetch all quotas
+        $quotaLines = Fetch-AllQuotas -AccountsFile $acctJson
+
+        # Redraw with results
+        Show-Header
+        Draw-BoxTop
+        Draw-BoxTitle "Account Dashboard"
+        Draw-BoxEmpty
+
+        $acctIdx = 0
+        foreach ($line in $quotaLines) {
+            if ($line.StartsWith("ACCOUNT:")) {
+                if ($acctIdx -gt 0) { Draw-BoxSep; Draw-BoxEmpty }
+                $parts = $line.Substring(8).Split("`t")
+                $acctEmail = $parts[0]
+                $acctActive = $parts[1] -eq "True"
+                $marker = if ($acctActive) { [char]0x25CF } else { [char]0x25CB }  # ● or ○
+                $markerColor = if ($acctActive) { "Green" } else { "DarkGray" }
+                $activeStr = if ($acctActive) { " (active)" } else { "" }
+
+                # Custom colored line for account
+                $visText = "  $marker  ${acctEmail}${activeStr}"
+                $padLen = $BOX_W - 4 - $visText.Length
+                if ($padLen -lt 0) { $padLen = 0 }
+                Write-Host ("  " + [char]0x2502 + " ") -NoNewline -ForegroundColor DarkGray
+                Write-Host "  $marker  " -NoNewline -ForegroundColor $markerColor
+                Write-Host $acctEmail -NoNewline -ForegroundColor White
+                if ($acctActive) {
+                    Write-Host " (active)" -NoNewline -ForegroundColor DarkGray
+                }
+                Write-Host (" " * $padLen + " " + [char]0x2502) -ForegroundColor DarkGray
+                Draw-BoxEmpty
+                $acctIdx++
+            }
+            elseif ($line.StartsWith("GROUP:")) {
+                $gn = $line.Substring(6)
+                $gc = switch -Wildcard ($gn) {
+                    "Claude*" { "Cyan" }
+                    "Gemini*" { "Magenta" }
+                    "Other*" { "DarkYellow" }
+                    default { "White" }
+                }
+                # Bold group header
+                $visLen = 4 + $gn.Length
+                $padLen = $BOX_W - 4 - $visLen
+                if ($padLen -lt 0) { $padLen = 0 }
+                Write-Host ("  " + [char]0x2502 + " ") -NoNewline -ForegroundColor DarkGray
+                Write-Host ("    " + $gn) -NoNewline -ForegroundColor $gc
+                Write-Host (" " * $padLen + " " + [char]0x2502) -ForegroundColor DarkGray
+            }
+            elseif ($line.StartsWith("MODEL:")) {
+                $parts = $line.Substring(6).Split("`t")
+                $mname = $parts[0]; $fill = [int]$parts[1]; $empty = [int]$parts[2]
+                $pctStr = $parts[3]; $resetStr = $parts[4]; $colorCode = $parts[5]
+                Draw-ModelLine -Name $mname -Fill $fill -Empty $empty -Pct $pctStr -Reset $resetStr -BarCol $colorCode
+            }
+            elseif ($line -eq "GROUPEND") {
+                Draw-BoxEmpty
+            }
+            elseif ($line.StartsWith("ERROR:")) {
+                Draw-BoxLine "    $($line.Substring(6))" -Color Red
+            }
+            elseif ($line -eq "END") {
+                break
+            }
+        }
+
         Draw-BoxSep
         Draw-BoxEmpty
-
-        # ── Active account ──
-        $actEmail = Get-Email $GEMINI_DIR
-        $actLabel = if ($actEmail) { $actEmail } else { $active }
-        $actSess = Count-MonthSessions $GEMINI_DIR
-        $actInfo = Get-DirSizeInfo $GEMINI_DIR
-
-        Write-Host "  $([char]0x2502)  Checking models..." -NoNewline -ForegroundColor DarkGray
-        $gemSt = Check-ModelStatus "https://gemini.google.com" ([ref]$script:GemCacheTime) ([ref]$script:GemCacheResult)
-        $cluSt = Check-ModelStatus "https://alkalimetal-pa.clients6.google.com" ([ref]$script:CluCacheTime) ([ref]$script:CluCacheResult)
-        Write-Host "`r                                          `r" -NoNewline
-
-        # Format Gemini status
-        $gemColor = switch ($gemSt) { "available" { "Green" } "limited" { "Red" } "forbidden" { "Red" } default { "Yellow" } }
-        $gemText = switch ($gemSt) {
-            "available" { "Available" }
-            "limited"   { "Rate limited - resets $countdown" }
-            "forbidden" { "Forbidden" }
-            default     { "Unknown" }
-        }
-        # Format Claude status
-        $cluColor = switch ($cluSt) { "available" { "Green" } "limited" { "Red" } "forbidden" { "Red" } default { "Yellow" } }
-        $cluText = switch ($cluSt) {
-            "available" { "Available" }
-            "limited"   { "Rate limited - resets $countdown" }
-            "forbidden" { "Forbidden" }
-            default     { "Unknown" }
-        }
-
-        Draw-BoxLine "  * $actLabel (active)" -Color Green
-        # Gemini status line
-        Write-Host ("  " + [char]0x2502 + " ") -NoNewline -ForegroundColor DarkGray
-        Write-Host "    Gemini  " -NoNewline -ForegroundColor Magenta
-        Write-Host $gemText -NoNewline -ForegroundColor $gemColor
-        $gemPad = $BOX_W - 4 - 12 - $gemText.Length; if ($gemPad -lt 0) { $gemPad = 0 }
-        Write-Host (" " * $gemPad) -NoNewline
-        Write-Host (" " + [char]0x2502) -ForegroundColor DarkGray
-        # Claude status line
-        Write-Host ("  " + [char]0x2502 + " ") -NoNewline -ForegroundColor DarkGray
-        Write-Host "    Claude  " -NoNewline -ForegroundColor Cyan
-        Write-Host $cluText -NoNewline -ForegroundColor $cluColor
-        $cluPad = $BOX_W - 4 - 12 - $cluText.Length; if ($cluPad -lt 0) { $cluPad = 0 }
-        Write-Host (" " * $cluPad) -NoNewline
-        Write-Host (" " + [char]0x2502) -ForegroundColor DarkGray
-        Draw-BoxLine "    $actSess sessions this month  -  $($actInfo.Text)" -Color DarkGray
-        Draw-BoxEmpty
-
-        # ── Saved profiles ──
-        $profiles = @()
-        $idx = 1
-        Get-ChildItem $PROFILES_DIR -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $pname = $_.Name
-            $profiles += $pname
-            $pemail = Get-Email $_.FullName
-            $plabel = if ($pemail) { $pemail } else { $pname }
-            $psess = Count-MonthSessions $_.FullName
-            $pinfo = Get-DirSizeInfo $_.FullName
-
-            Draw-BoxLine "  [$idx]  $plabel"
-            Draw-BoxLine "    ?  Switch to this account to check status" -Color DarkGray
-            Draw-BoxLine "    $psess sessions this month  -  $($pinfo.Text)" -Color DarkGray
-            Draw-BoxEmpty
-            $idx++
-        }
-
-        if ($profiles.Count -eq 0) {
-            Draw-BoxLine "  No saved profiles. Press [s] to save." -Color DarkGray
-            Draw-BoxEmpty
-        }
-
-        Draw-BoxSep
-        Draw-BoxEmpty
-        Draw-BoxLine "  [s]  Save current account"
-        Draw-BoxLine "  [e]  Set Gmail label for active account"
-        Draw-BoxLine "  [r]  Refresh status"
-        Draw-BoxLine "  [d]  Delete a profile" -Color Red
+        Draw-BoxLine "  [r]  Refresh"
         Draw-BoxLine "  [b]  Back" -Color DarkGray
         Draw-BoxEmpty
         Draw-BoxBot
@@ -1059,124 +1178,9 @@ function Menu-Accounts {
         Write-Host ""
         $ch = Read-Choice
 
-        if ([string]::IsNullOrWhiteSpace($ch)) { continue }
-
-        Write-Host ""
         switch -Regex ($ch) {
-            "^[eE]$" {
-                $em = Read-Choice "  Gmail for active account: "
-                $em = $em -replace '[^a-zA-Z0-9@._+ -]', ''
-                if ([string]::IsNullOrEmpty($em)) {
-                    Write-Host "  Empty." -ForegroundColor Red
-                    Wait-Key; continue
-                }
-                Set-Email $GEMINI_DIR $em
-                Write-Host "  Label set: $em" -ForegroundColor Green
-                Wait-Key
-            }
-            "^[rR]$" {
-                $script:GemCacheTime = [datetime]::MinValue
-                $script:GemCacheResult = ""
-                $script:CluCacheTime = [datetime]::MinValue
-                $script:CluCacheResult = ""
-                Write-Host "  Refreshing..." -ForegroundColor Cyan
-                continue
-            }
-            "^[sS]$" {
-                # Ask for email first if not set
-                $curEmail = Get-Email $GEMINI_DIR
-                if ([string]::IsNullOrEmpty($curEmail)) {
-                    $em = Read-Choice "  Gmail address for this account: "
-                    $em = $em -replace '[^a-zA-Z0-9@._+ -]', ''
-                    if (-not [string]::IsNullOrEmpty($em)) { Set-Email $GEMINI_DIR $em }
-                }
-                $pname = Read-Choice "  Profile name (short label): "
-                $pname = $pname -replace '[^a-zA-Z0-9_-]', ''
-                if ([string]::IsNullOrEmpty($pname)) {
-                    Write-Host "  Invalid name." -ForegroundColor Red
-                    Wait-Key; continue
-                }
-                $profPath = "$PROFILES_DIR\$pname"
-                if (Test-Path $profPath) {
-                    $yn = Read-Choice "  Overwrite '$pname'? [y/N] "
-                    if ($yn -notmatch "^[Yy]$") {
-                        Write-Host "  Cancelled." -ForegroundColor Yellow
-                        Wait-Key; continue
-                    }
-                    Remove-Item $profPath -Recurse -Force
-                }
-                Write-Host "  Saving as '$pname'..." -ForegroundColor Cyan
-                New-Item -ItemType Directory -Force -Path $profPath | Out-Null
-                if (Test-Path $GEMINI_DIR) {
-                    Copy-Item "$GEMINI_DIR\*" $profPath -Recurse -Force -ErrorAction SilentlyContinue
-                }
-                Set-Content $ACTIVE_FILE $pname -NoNewline
-                Write-Host "  Saved." -ForegroundColor Green
-                Wait-Key
-            }
-            "^[dD]$" {
-                if ($profiles.Count -eq 0) {
-                    Write-Host "  Nothing to delete." -ForegroundColor Yellow
-                    Wait-Key; continue
-                }
-                $dn = Read-Choice "  Number to delete: "
-                if ($dn -match "^\d+$" -and [int]$dn -ge 1 -and [int]$dn -le $profiles.Count) {
-                    $tgt = $profiles[[int]$dn - 1]
-                    if ($tgt -eq $active) {
-                        Write-Host "  Can't delete active." -ForegroundColor Red
-                    } else {
-                        Remove-Item "$PROFILES_DIR\$tgt" -Recurse -Force
-                        Write-Host "  Deleted '$tgt'." -ForegroundColor Green
-                    }
-                } else {
-                    Write-Host "  Invalid." -ForegroundColor Red
-                }
-                Wait-Key
-            }
+            "^[rR]$" { continue }
             "^[bB]$" { return }
-            "^\d+$" {
-                $num = [int]$ch
-                if ($num -ge 1 -and $num -le $profiles.Count) {
-                    $tgt = $profiles[$num - 1]
-                    if ($tgt -eq $active) {
-                        Write-Host "  Already active." -ForegroundColor Cyan
-                        Wait-Key; continue
-                    }
-                    $tgtEmail = Get-Email "$PROFILES_DIR\$tgt"
-                    $tgtLabel = if ($tgtEmail) { $tgtEmail } else { $tgt }
-
-                    Write-Host "  Close Antigravity before switching." -ForegroundColor Yellow
-                    $yn = Read-Choice "  Switch to '$tgtLabel'? [y/N] "
-                    if ($yn -notmatch "^[Yy]$") {
-                        Write-Host "  Cancelled." -ForegroundColor Yellow
-                        Wait-Key; continue
-                    }
-
-                    Write-Host "  Saving '$active'..." -ForegroundColor Cyan
-                    if (Test-Path "$PROFILES_DIR\$active") {
-                        Remove-Item "$PROFILES_DIR\$active" -Recurse -Force
-                    }
-                    Rename-Item $GEMINI_DIR "$PROFILES_DIR\$active"
-
-                    Write-Host "  Restoring '$tgtLabel'..." -ForegroundColor Cyan
-                    Rename-Item "$PROFILES_DIR\$tgt" $GEMINI_DIR
-
-                    Set-Content $ACTIVE_FILE $tgt -NoNewline
-                    $script:ANTIGRAVITY_DIR = "$GEMINI_DIR\antigravity"
-                    $script:BROWSER_PROF_DIR = "$GEMINI_DIR\antigravity-browser-profile"
-                    $script:BP_DEF = "$BROWSER_PROF_DIR\Default"
-                    $script:BACKUP_DIR = "$GEMINI_DIR\backups"
-                    $script:GemCacheTime = [datetime]::MinValue
-                    $script:GemCacheResult = ""
-                    $script:CluCacheTime = [datetime]::MinValue
-                    $script:CluCacheResult = ""
-                    Write-Host "  Switched to '$tgtLabel'." -ForegroundColor Green
-                    Wait-Key
-                } else {
-                    Write-Host "  Invalid." -ForegroundColor Red
-                    Wait-Key
-                }
-            }
             default { continue }
         }
     }
@@ -1391,7 +1395,7 @@ function Main-Menu {
         Draw-BoxLine "  [3]  Network Fixer          DNS, connectivity, 403"
         Draw-BoxLine "  [4]  Troubleshooter         Diagnose & auto-fix"
         Draw-BoxLine "  [5]  Usage & Rate Limits    Stats + reset timer"
-        Draw-BoxLine "  [6]  Account Dashboard      Profiles + model status"
+        Draw-BoxLine "  [6]  Account Dashboard      Per-model quota status"
         Draw-BoxLine "  [7]  Browser Backup         Backup system browsers"
         Draw-BoxEmpty
         Draw-BoxLine "  [8]  Fix Everything         One-click comprehensive fix" -Color Green

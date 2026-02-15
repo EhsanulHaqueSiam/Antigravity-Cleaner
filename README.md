@@ -29,7 +29,7 @@ iwr -useb https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner
 | 3 | **Network Fixer** | DNS flush (distro-aware), Google/Gemini/API connectivity checks, 403 fix guide |
 | 4 | **Troubleshooter** | 9-point diagnostic scan with auto-fix — checks dirs, internet, DNS, API access, lock files, disk space, cache size, rate limits |
 | 5 | **Usage & Rate Limits** | Session counts, file counts, activity breakdown, monthly cycle progress bar, days until reset, session rate projections |
-| 6 | **Account Dashboard** | Multi-account management with Gmail labels, per-model (Gemini/Claude) live API status, session counts, exact rate limit countdown, and profile switching |
+| 6 | **Account Dashboard** | Auto-detects accounts from config files, per-model quota with progress bars (Gemini 3/2.5, Claude), live API-based quota checking with reset countdown |
 | 7 | **Browser Backup** | Auto-detects Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc — creates timestamped archives |
 | 8 | **Fix Everything** | One-click comprehensive fix: DNS flush + cache clean + browser clean + lock fix + connectivity test |
 
@@ -69,20 +69,24 @@ install.ps1                   One-liner installer (iwr | iex)
 
 ## How Account Dashboard Works
 
-Profiles are stored in `~/.antigravity-profiles/`. Each profile has a `.antigravity-label` file for the Gmail address.
+Accounts are auto-detected from config files:
+- `~/.config/opencode/antigravity-accounts.json` (primary)
+- `~/.config/antigravity-proxy/accounts.json` (fallback)
 
-**Switching profiles:**
-1. Current `~/.gemini/` is moved to `~/.antigravity-profiles/<current>/`
-2. Target profile is moved from `~/.antigravity-profiles/<target>/` to `~/.gemini/`
-3. Active profile name is tracked in `~/.antigravity-profiles/.active`
-4. Gmail label travels with the profile during switches
+**Per-model quota display:**
+- Shows remaining quota as progress bars for every model (Gemini 3, Gemini 2.5, Claude)
+- Percentage remaining (e.g., "100.0%", "45.3%", or "Exhausted")
+- Reset countdown for rate-limited models (e.g., "→ 5h 30m")
+- Active account is marked with `●`, others with `○`
 
-**Model status checks:**
-- **Gemini**: Checks `gemini.google.com` for 429 (rate limited) / 200 (available) / 403 (forbidden)
-- **Claude**: Checks `alkalimetal-pa.clients6.google.com` for API availability
-- Results are cached for 30 seconds; press `[r]` to force refresh
+**How it works:**
+1. Reads accounts and refresh tokens from the config JSON
+2. Exchanges each refresh token for an access token via Google OAuth
+3. Calls the `fetchAvailableModels` API to get per-model quota data
+4. Displays grouped results with color-coded progress bars
 
-Close Antigravity before switching profiles.
+**Requirements:** `python3` (Linux/macOS) for the bash version; PowerShell 5.1+ for Windows.
+Press `[r]` to refresh quotas.
 
 ## License
 
