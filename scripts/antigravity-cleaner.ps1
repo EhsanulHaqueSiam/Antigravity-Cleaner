@@ -845,17 +845,25 @@ function Menu-Usage {
     # Rate Limit / Reset Timer
     $dim = [DateTime]::DaysInMonth($now.Year, $now.Month)
     $dayNum = $now.Day
-    $remaining = $dim - $dayNum
     $monthName = $now.ToString("MMMM")
-    $nextMonth = $now.AddMonths(1).ToString("MMMM yyyy")
+
+    # Exact reset: 1st of next month at midnight
+    $resetDate = (Get-Date -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(1)
+    $resetDateStr = $resetDate.ToString("MMMM dd, yyyy 'at' hh:mm tt")
+    $timeLeft = $resetDate - $now
+    $dLeft = [math]::Floor($timeLeft.TotalDays)
+    $hLeft = $timeLeft.Hours
+    $mLeft = $timeLeft.Minutes
+    $countdown = "${dLeft}d ${hLeft}h ${mLeft}m"
 
     Write-Host ""
     Draw-BoxTop
     Draw-BoxTitle "Rate Limit Reset Timer"
     Draw-BoxEmpty
     Draw-BoxLine "  Current Cycle       $monthName $($now.Year)"
-    Draw-BoxLine "  Resets On           $nextMonth 1"
-    Draw-BoxLine "  Days Remaining      $remaining days"
+    Draw-BoxEmpty
+    Draw-BoxLine "  Available On        $resetDateStr" -Color Green
+    Draw-BoxLine "  Countdown           $countdown" -Color Yellow
     Draw-BoxEmpty
     $pbar = Draw-ProgressBar -Current $dayNum -Total $dim -Width 32
     Draw-BoxLine "  $pbar" -Color Green
@@ -871,8 +879,7 @@ function Menu-Usage {
         Draw-BoxEmpty
     }
 
-    Draw-BoxLine "  Free tier resets on the 1st of each month." -Color DarkGray
-    Draw-BoxLine "  If rate-limited, reduce usage or wait for reset." -Color DarkGray
+    Draw-BoxLine "  Rate limit resets at midnight on the 1st." -Color DarkGray
     Draw-BoxEmpty
     Draw-BoxBot
 

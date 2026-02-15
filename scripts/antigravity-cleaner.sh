@@ -688,19 +688,32 @@ menu_usage() {
         dim=$(date -d "${year}-${month}-01 +1 month -1 day" +%d 2>/dev/null || echo 30)
     fi
     dim=${dim#0}
-    local remaining=$(( dim - day ))
-    local next_month
+
+    # Calculate exact reset timestamp (1st of next month, 00:00:00)
+    local reset_ts reset_date_str
     if [[ "$OSTYPE" == darwin* ]]; then
-        next_month=$(date -v+1m "+%B %Y" 2>/dev/null || echo "Next Month")
+        reset_ts=$(date -v1d -v+1m -v0H -v0M -v0S +%s 2>/dev/null || echo 0)
+        reset_date_str=$(date -v1d -v+1m "+%B %d, %Y at %I:%M %p" 2>/dev/null || echo "1st of next month")
     else
-        next_month=$(date -d "+1 month" "+%B %Y" 2>/dev/null || echo "Next Month")
+        local next_m; next_m=$(date -d "${year}-${month}-01 +1 month" "+%Y-%m-01" 2>/dev/null)
+        reset_ts=$(date -d "$next_m 00:00:00" +%s 2>/dev/null || echo 0)
+        reset_date_str=$(date -d "$next_m 00:00:00" "+%B %d, %Y at %I:%M %p" 2>/dev/null || echo "1st of next month")
     fi
+
+    local secs_left=$(( reset_ts - now ))
+    (( secs_left < 0 )) && secs_left=0
+    local d_left=$(( secs_left / 86400 ))
+    local h_left=$(( (secs_left % 86400) / 3600 ))
+    local m_left=$(( (secs_left % 3600) / 60 ))
+
+    local countdown="${d_left}d ${h_left}h ${m_left}m"
 
     printf "\n"
     box_top; box_title "Rate Limit Reset Timer"; box_empty
     box_line "  ${WHITE}Current Cycle${RST}       ${WHITE}${BOLD}${month_name} ${year}${RST}"
-    box_line "  ${WHITE}Resets On${RST}           ${WHITE}${BOLD}${next_month} 1${RST}"
-    box_line "  ${WHITE}Days Remaining${RST}      ${WHITE}${BOLD}${remaining}${RST} days"
+    box_empty
+    box_line "  ${WHITE}Available On${RST}        ${GREEN}${BOLD}${reset_date_str}${RST}"
+    box_line "  ${WHITE}Countdown${RST}           ${YELLOW}${BOLD}${countdown}${RST}"
     box_empty
     local pbar; pbar=$(progress_bar "$day" "$dim" 32)
     box_line "  ${pbar}"
@@ -715,8 +728,7 @@ menu_usage() {
         box_empty
     fi
 
-    box_line "  ${DGRAY}Free tier resets on the 1st of each month.${RST}"
-    box_line "  ${DGRAY}If rate-limited, reduce usage or wait for reset.${RST}"
+    box_line "  ${DGRAY}Rate limit resets at midnight on the 1st.${RST}"
     box_empty; box_bot
 
     wait_key
