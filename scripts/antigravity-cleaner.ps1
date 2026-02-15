@@ -190,8 +190,8 @@ function Wait-Key {
 function Read-Choice {
     param([string]$Prompt = "  > ")
     Write-Host $Prompt -NoNewline -ForegroundColor Cyan
-    $input = Read-Host
-    return $input.Trim()
+    $userInput = Read-Host
+    return $userInput.Trim()
 }
 
 function Get-ActiveProfile {

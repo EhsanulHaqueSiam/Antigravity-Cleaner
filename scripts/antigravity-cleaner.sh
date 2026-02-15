@@ -45,7 +45,9 @@ show_cursor() { printf '\033[?25h'; }
 trap 'show_cursor; printf "${RST}"' EXIT INT TERM
 
 read_key() {
-    show_cursor; local i=""; read -r i; hide_cursor
+    printf '\033[?25h' >/dev/tty   # show cursor (bypass $() capture)
+    local i=""; read -r i
+    printf '\033[?25l' >/dev/tty   # hide cursor (bypass $() capture)
     i="${i#"${i%%[![:space:]]*}"}"; i="${i%"${i##*[![:space:]]}"}"
     printf '%s' "$i"
 }
@@ -97,7 +99,16 @@ box_title() {
 #  Utility functions
 # ═══════════════════════════════════════════════════════════════════════════════
 get_size()       { [ -d "$1" ] && du -sh "$1" 2>/dev/null | cut -f1 || echo "0B"; }
-get_size_bytes() { [ -d "$1" ] && du -sb "$1" 2>/dev/null | cut -f1 || echo "0"; }
+get_size_bytes() {
+    if [ -d "$1" ]; then
+        if [[ "$OSTYPE" == darwin* ]]; then
+            local kb; kb=$(du -sk "$1" 2>/dev/null | cut -f1)
+            echo $(( ${kb:-0} * 1024 ))
+        else
+            du -sb "$1" 2>/dev/null | cut -f1 || echo "0"
+        fi
+    else echo "0"; fi
+}
 
 fmt_size() {
     local u="${1//[0-9.]/}"
@@ -534,7 +545,12 @@ menu_troubleshoot() {
 
     # 7. Disk space
     printf "  ${CYAN}[7/9]${RST} Disk space… "
-    local avail; avail=$(df -BM "$HOME" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'M')
+    local avail
+    if [[ "$OSTYPE" == darwin* ]]; then
+        avail=$(df -m "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
+    else
+        avail=$(df -BM "$HOME" 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'M')
+    fi
     if [ -n "$avail" ] && (( avail > 500 )); then
         printf "${GREEN}OK (${avail}MB free)${RST}\n"
     elif [ -n "$avail" ]; then
@@ -793,36 +809,36 @@ menu_backup() {
     draw_header
     mkdir -p "$BACKUP_DIR" 2>/dev/null
 
-    declare -A browsers
+    local bnames=() bpaths=()
     if [[ "$OSTYPE" == darwin* ]]; then
         local as="$HOME/Library/Application Support"
-        [ -d "$as/Google/Chrome" ]              && browsers[chrome]="$as/Google/Chrome"
-        [ -d "$as/Chromium" ]                   && browsers[chromium]="$as/Chromium"
-        [ -d "$as/BraveSoftware/Brave-Browser" ] && browsers[brave]="$as/BraveSoftware/Brave-Browser"
-        [ -d "$as/Microsoft Edge" ]             && browsers[edge]="$as/Microsoft Edge"
-        [ -d "$as/com.operasoftware.Opera" ]    && browsers[opera]="$as/com.operasoftware.Opera"
-        [ -d "$as/Firefox/Profiles" ]           && browsers[firefox]="$as/Firefox/Profiles"
-        [ -d "$as/Arc" ]                        && browsers[arc]="$as/Arc"
-        [ -d "$as/Vivaldi" ]                    && browsers[vivaldi]="$as/Vivaldi"
+        [ -d "$as/Google/Chrome" ]              && bnames+=("chrome")    && bpaths+=("$as/Google/Chrome")
+        [ -d "$as/Chromium" ]                   && bnames+=("chromium")  && bpaths+=("$as/Chromium")
+        [ -d "$as/BraveSoftware/Brave-Browser" ] && bnames+=("brave")   && bpaths+=("$as/BraveSoftware/Brave-Browser")
+        [ -d "$as/Microsoft Edge" ]             && bnames+=("edge")     && bpaths+=("$as/Microsoft Edge")
+        [ -d "$as/com.operasoftware.Opera" ]    && bnames+=("opera")    && bpaths+=("$as/com.operasoftware.Opera")
+        [ -d "$as/Firefox/Profiles" ]           && bnames+=("firefox")  && bpaths+=("$as/Firefox/Profiles")
+        [ -d "$as/Arc" ]                        && bnames+=("arc")      && bpaths+=("$as/Arc")
+        [ -d "$as/Vivaldi" ]                    && bnames+=("vivaldi")  && bpaths+=("$as/Vivaldi")
     else
-        [ -d "$HOME/.config/google-chrome" ]               && browsers[chrome]="$HOME/.config/google-chrome"
-        [ -d "$HOME/.config/chromium" ]                    && browsers[chromium]="$HOME/.config/chromium"
-        [ -d "$HOME/.config/BraveSoftware/Brave-Browser" ] && browsers[brave]="$HOME/.config/BraveSoftware/Brave-Browser"
-        [ -d "$HOME/.config/microsoft-edge" ]              && browsers[edge]="$HOME/.config/microsoft-edge"
-        [ -d "$HOME/.config/opera" ]                       && browsers[opera]="$HOME/.config/opera"
-        [ -d "$HOME/.mozilla/firefox" ]                    && browsers[firefox]="$HOME/.mozilla/firefox"
-        [ -d "$HOME/.config/vivaldi" ]                     && browsers[vivaldi]="$HOME/.config/vivaldi"
+        [ -d "$HOME/.config/google-chrome" ]               && bnames+=("chrome")    && bpaths+=("$HOME/.config/google-chrome")
+        [ -d "$HOME/.config/chromium" ]                    && bnames+=("chromium")  && bpaths+=("$HOME/.config/chromium")
+        [ -d "$HOME/.config/BraveSoftware/Brave-Browser" ] && bnames+=("brave")     && bpaths+=("$HOME/.config/BraveSoftware/Brave-Browser")
+        [ -d "$HOME/.config/microsoft-edge" ]              && bnames+=("edge")      && bpaths+=("$HOME/.config/microsoft-edge")
+        [ -d "$HOME/.config/opera" ]                       && bnames+=("opera")     && bpaths+=("$HOME/.config/opera")
+        [ -d "$HOME/.mozilla/firefox" ]                    && bnames+=("firefox")   && bpaths+=("$HOME/.mozilla/firefox")
+        [ -d "$HOME/.config/vivaldi" ]                     && bnames+=("vivaldi")   && bpaths+=("$HOME/.config/vivaldi")
     fi
-    [ -d "$BP_DIR" ] && browsers[antigravity]="$BP_DIR"
+    [ -d "$BP_DIR" ] && bnames+=("antigravity") && bpaths+=("$BP_DIR")
 
     box_top; box_title "Browser Backup"; box_empty
-    if (( ${#browsers[@]} == 0 )); then
+    if (( ${#bnames[@]} == 0 )); then
         box_line "  ${YELLOW}No browsers detected.${RST}"; box_empty; box_bot; wait_key; return
     fi
-    local keys=("${!browsers[@]}") idx=1
-    for n in "${keys[@]}"; do
-        local sz; sz=$(get_size "${browsers[$n]}")
-        box_line "  ${CYAN}[${WHITE}${idx}${CYAN}]${RST}  $(printf '%-22s' "$n") ${DGRAY}${sz}${RST}"
+    local idx=1
+    for i in "${!bnames[@]}"; do
+        local sz; sz=$(get_size "${bpaths[$i]}")
+        box_line "  ${CYAN}[${WHITE}${idx}${CYAN}]${RST}  $(printf '%-22s' "${bnames[$i]}") ${DGRAY}${sz}${RST}"
         (( idx++ ))
     done
     box_empty; box_line "  ${CYAN}[${WHITE}a${CYAN}]${RST}  Backup ALL"
@@ -842,10 +858,11 @@ menu_backup() {
     }
 
     case "$ch" in
-        a|A) for n in "${keys[@]}"; do _bak "$n" "${browsers[$n]}"; done
+        a|A) for i in "${!bnames[@]}"; do _bak "${bnames[$i]}" "${bpaths[$i]}"; done
              ok_ "Saved to $BACKUP_DIR"; wait_key;;
         b|B) return;;
-        [0-9]*) (( ch>=1 && ch<=${#keys[@]} )) && _bak "${keys[$((ch-1))]}" "${browsers[${keys[$((ch-1))]}]}" && ok_ "Saved."
+        [0-9]*) local sel=$((ch-1))
+                (( sel>=0 && sel<${#bnames[@]} )) && _bak "${bnames[$sel]}" "${bpaths[$sel]}" && ok_ "Saved."
                 wait_key;;
     esac
 }
