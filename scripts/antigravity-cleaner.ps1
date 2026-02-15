@@ -887,8 +887,62 @@ function Menu-Usage {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  6. Account Switcher
+#  6. Account Dashboard
 # ═══════════════════════════════════════════════════════════════════════════════
+$LABEL_FILE = ".antigravity-label"
+$script:GemCacheTime = [datetime]::MinValue
+$script:GemCacheResult = ""
+$script:CluCacheTime = [datetime]::MinValue
+$script:CluCacheResult = ""
+
+function Get-Email {
+    param([string]$Dir)
+    $f = Join-Path $Dir $LABEL_FILE
+    if (Test-Path $f) { return (Get-Content $f -Raw -ErrorAction SilentlyContinue).Trim() }
+    return ""
+}
+
+function Set-Email {
+    param([string]$Dir, [string]$Email)
+    Set-Content (Join-Path $Dir $LABEL_FILE) $Email -NoNewline
+}
+
+function Count-MonthSessions {
+    param([string]$Dir)
+    $cdir = Join-Path $Dir "antigravity\conversations"
+    if (-not (Test-Path $cdir)) { return 0 }
+    $now = Get-Date
+    $cnt = 0
+    Get-ChildItem $cdir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        if (($now - $_.LastWriteTime).TotalSeconds -lt 2592000) { $cnt++ }
+    }
+    return $cnt
+}
+
+function Check-ModelStatus {
+    param([string]$Url, [ref]$CacheTime, [ref]$CacheResult)
+    $now = Get-Date
+    if (($now - $CacheTime.Value).TotalSeconds -lt 30 -and $CacheResult.Value -ne "") {
+        return $CacheResult.Value
+    }
+    try {
+        $r = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        $code = $r.StatusCode
+        $CacheTime.Value = $now
+        if ($code -in 200,301,302,303,404) { $CacheResult.Value = "available" }
+        elseif ($code -eq 429) { $CacheResult.Value = "limited" }
+        elseif ($code -eq 403) { $CacheResult.Value = "forbidden" }
+        else { $CacheResult.Value = "unknown" }
+    } catch {
+        $CacheTime.Value = $now
+        $status = $_.Exception.Response.StatusCode.value__
+        if ($status -eq 429) { $CacheResult.Value = "limited" }
+        elseif ($status -eq 403) { $CacheResult.Value = "forbidden" }
+        else { $CacheResult.Value = "unknown" }
+    }
+    return $CacheResult.Value
+}
+
 function Menu-Accounts {
     while ($true) {
         Show-Header
@@ -899,32 +953,104 @@ function Menu-Accounts {
             New-Item -ItemType Directory -Force -Path $PROFILES_DIR | Out-Null
         }
 
+        # ── Reset countdown ──
+        $now = Get-Date
+        $dim = [DateTime]::DaysInMonth($now.Year, $now.Month)
+        $dayNum = $now.Day
+        $resetDate = (Get-Date -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(1)
+        $resetStr = $resetDate.ToString("MMM dd, yyyy hh:mm tt")
+        $timeLeft = $resetDate - $now
+        $dLeft = [math]::Floor($timeLeft.TotalDays)
+        $hLeft = $timeLeft.Hours
+        $mLeft = $timeLeft.Minutes
+        $countdown = "${dLeft}d ${hLeft}h ${mLeft}m"
+
         Draw-BoxTop
-        Draw-BoxTitle "Account Switcher"
+        Draw-BoxTitle "Account Dashboard"
         Draw-BoxEmpty
-        Draw-BoxLine "  Active: $active" -Color Green
+        Draw-BoxLine "  Rate Limit Resets   $resetStr" -Color Green
+        Draw-BoxLine "  Countdown           $countdown" -Color Yellow
+        Draw-BoxEmpty
+        $pbar = Draw-ProgressBar -Current $dayNum -Total $dim -Width 30
+        Draw-BoxLine "  $pbar" -Color Green
+        Draw-BoxEmpty
+        Draw-BoxSep
         Draw-BoxEmpty
 
+        # ── Active account ──
+        $actEmail = Get-Email $GEMINI_DIR
+        $actLabel = if ($actEmail) { $actEmail } else { $active }
+        $actSess = Count-MonthSessions $GEMINI_DIR
+        $actInfo = Get-DirSizeInfo $GEMINI_DIR
+
+        Write-Host "  $([char]0x2502)  Checking models..." -NoNewline -ForegroundColor DarkGray
+        $gemSt = Check-ModelStatus "https://gemini.google.com" ([ref]$script:GemCacheTime) ([ref]$script:GemCacheResult)
+        $cluSt = Check-ModelStatus "https://alkalimetal-pa.clients6.google.com" ([ref]$script:CluCacheTime) ([ref]$script:CluCacheResult)
+        Write-Host "`r                                          `r" -NoNewline
+
+        # Format Gemini status
+        $gemColor = switch ($gemSt) { "available" { "Green" } "limited" { "Red" } "forbidden" { "Red" } default { "Yellow" } }
+        $gemText = switch ($gemSt) {
+            "available" { "Available" }
+            "limited"   { "Rate limited - resets $countdown" }
+            "forbidden" { "Forbidden" }
+            default     { "Unknown" }
+        }
+        # Format Claude status
+        $cluColor = switch ($cluSt) { "available" { "Green" } "limited" { "Red" } "forbidden" { "Red" } default { "Yellow" } }
+        $cluText = switch ($cluSt) {
+            "available" { "Available" }
+            "limited"   { "Rate limited - resets $countdown" }
+            "forbidden" { "Forbidden" }
+            default     { "Unknown" }
+        }
+
+        Draw-BoxLine "  * $actLabel (active)" -Color Green
+        # Gemini status line
+        Write-Host ("  " + [char]0x2502 + " ") -NoNewline -ForegroundColor DarkGray
+        Write-Host "    Gemini  " -NoNewline -ForegroundColor Magenta
+        Write-Host $gemText -NoNewline -ForegroundColor $gemColor
+        $gemPad = $BOX_W - 4 - 12 - $gemText.Length; if ($gemPad -lt 0) { $gemPad = 0 }
+        Write-Host (" " * $gemPad) -NoNewline
+        Write-Host (" " + [char]0x2502) -ForegroundColor DarkGray
+        # Claude status line
+        Write-Host ("  " + [char]0x2502 + " ") -NoNewline -ForegroundColor DarkGray
+        Write-Host "    Claude  " -NoNewline -ForegroundColor Cyan
+        Write-Host $cluText -NoNewline -ForegroundColor $cluColor
+        $cluPad = $BOX_W - 4 - 12 - $cluText.Length; if ($cluPad -lt 0) { $cluPad = 0 }
+        Write-Host (" " * $cluPad) -NoNewline
+        Write-Host (" " + [char]0x2502) -ForegroundColor DarkGray
+        Draw-BoxLine "    $actSess sessions this month  -  $($actInfo.Text)" -Color DarkGray
+        Draw-BoxEmpty
+
+        # ── Saved profiles ──
         $profiles = @()
         $idx = 1
         Get-ChildItem $PROFILES_DIR -Directory -ErrorAction SilentlyContinue | ForEach-Object {
             $pname = $_.Name
             $profiles += $pname
-            $pinfo = Get-DirSizeInfo -Path $_.FullName
-            $mark = if ($pname -eq $active) { " *" } else { "" }
-            $line = "  [$idx]  " + $pname.PadRight(20) + " " + $pinfo.Text + $mark
-            Draw-BoxLine $line
+            $pemail = Get-Email $_.FullName
+            $plabel = if ($pemail) { $pemail } else { $pname }
+            $psess = Count-MonthSessions $_.FullName
+            $pinfo = Get-DirSizeInfo $_.FullName
+
+            Draw-BoxLine "  [$idx]  $plabel"
+            Draw-BoxLine "    ?  Switch to this account to check status" -Color DarkGray
+            Draw-BoxLine "    $psess sessions this month  -  $($pinfo.Text)" -Color DarkGray
+            Draw-BoxEmpty
             $idx++
         }
 
         if ($profiles.Count -eq 0) {
-            Draw-BoxLine "  No saved profiles yet." -Color DarkGray
+            Draw-BoxLine "  No saved profiles. Press [s] to save." -Color DarkGray
+            Draw-BoxEmpty
         }
 
-        Draw-BoxEmpty
         Draw-BoxSep
         Draw-BoxEmpty
-        Draw-BoxLine "  [s]  Save current as new profile"
+        Draw-BoxLine "  [s]  Save current account"
+        Draw-BoxLine "  [e]  Set Gmail label for active account"
+        Draw-BoxLine "  [r]  Refresh status"
         Draw-BoxLine "  [d]  Delete a profile" -Color Red
         Draw-BoxLine "  [b]  Back" -Color DarkGray
         Draw-BoxEmpty
@@ -937,8 +1063,34 @@ function Menu-Accounts {
 
         Write-Host ""
         switch -Regex ($ch) {
+            "^[eE]$" {
+                $em = Read-Choice "  Gmail for active account: "
+                $em = $em -replace '[^a-zA-Z0-9@._+ -]', ''
+                if ([string]::IsNullOrEmpty($em)) {
+                    Write-Host "  Empty." -ForegroundColor Red
+                    Wait-Key; continue
+                }
+                Set-Email $GEMINI_DIR $em
+                Write-Host "  Label set: $em" -ForegroundColor Green
+                Wait-Key
+            }
+            "^[rR]$" {
+                $script:GemCacheTime = [datetime]::MinValue
+                $script:GemCacheResult = ""
+                $script:CluCacheTime = [datetime]::MinValue
+                $script:CluCacheResult = ""
+                Write-Host "  Refreshing..." -ForegroundColor Cyan
+                continue
+            }
             "^[sS]$" {
-                $pname = Read-Choice "  Profile name: "
+                # Ask for email first if not set
+                $curEmail = Get-Email $GEMINI_DIR
+                if ([string]::IsNullOrEmpty($curEmail)) {
+                    $em = Read-Choice "  Gmail address for this account: "
+                    $em = $em -replace '[^a-zA-Z0-9@._+ -]', ''
+                    if (-not [string]::IsNullOrEmpty($em)) { Set-Email $GEMINI_DIR $em }
+                }
+                $pname = Read-Choice "  Profile name (short label): "
                 $pname = $pname -replace '[^a-zA-Z0-9_-]', ''
                 if ([string]::IsNullOrEmpty($pname)) {
                     Write-Host "  Invalid name." -ForegroundColor Red
@@ -946,38 +1098,38 @@ function Menu-Accounts {
                 }
                 $profPath = "$PROFILES_DIR\$pname"
                 if (Test-Path $profPath) {
-                    $yn = Read-Choice "  Profile '$pname' exists. Overwrite? [y/N] "
+                    $yn = Read-Choice "  Overwrite '$pname'? [y/N] "
                     if ($yn -notmatch "^[Yy]$") {
                         Write-Host "  Cancelled." -ForegroundColor Yellow
                         Wait-Key; continue
                     }
                     Remove-Item $profPath -Recurse -Force
                 }
-                Write-Host "  Saving current session as '$pname'..." -ForegroundColor Cyan
+                Write-Host "  Saving as '$pname'..." -ForegroundColor Cyan
                 New-Item -ItemType Directory -Force -Path $profPath | Out-Null
                 if (Test-Path $GEMINI_DIR) {
                     Copy-Item "$GEMINI_DIR\*" $profPath -Recurse -Force -ErrorAction SilentlyContinue
                 }
                 Set-Content $ACTIVE_FILE $pname -NoNewline
-                Write-Host "  Saved profile '$pname'." -ForegroundColor Green
+                Write-Host "  Saved." -ForegroundColor Green
                 Wait-Key
             }
             "^[dD]$" {
                 if ($profiles.Count -eq 0) {
-                    Write-Host "  No profiles to delete." -ForegroundColor Yellow
+                    Write-Host "  Nothing to delete." -ForegroundColor Yellow
                     Wait-Key; continue
                 }
-                $dn = Read-Choice "  Profile number to delete: "
+                $dn = Read-Choice "  Number to delete: "
                 if ($dn -match "^\d+$" -and [int]$dn -ge 1 -and [int]$dn -le $profiles.Count) {
                     $tgt = $profiles[[int]$dn - 1]
                     if ($tgt -eq $active) {
-                        Write-Host "  Cannot delete the active profile. Switch first." -ForegroundColor Red
+                        Write-Host "  Can't delete active." -ForegroundColor Red
                     } else {
                         Remove-Item "$PROFILES_DIR\$tgt" -Recurse -Force
-                        Write-Host "  Deleted profile '$tgt'." -ForegroundColor Green
+                        Write-Host "  Deleted '$tgt'." -ForegroundColor Green
                     }
                 } else {
-                    Write-Host "  Invalid selection." -ForegroundColor Red
+                    Write-Host "  Invalid." -ForegroundColor Red
                 }
                 Wait-Key
             }
@@ -987,24 +1139,26 @@ function Menu-Accounts {
                 if ($num -ge 1 -and $num -le $profiles.Count) {
                     $tgt = $profiles[$num - 1]
                     if ($tgt -eq $active) {
-                        Write-Host "  Already on '$tgt'." -ForegroundColor Cyan
+                        Write-Host "  Already active." -ForegroundColor Cyan
                         Wait-Key; continue
                     }
+                    $tgtEmail = Get-Email "$PROFILES_DIR\$tgt"
+                    $tgtLabel = if ($tgtEmail) { $tgtEmail } else { $tgt }
 
-                    Write-Host "  Switching will close any running Antigravity session." -ForegroundColor Yellow
-                    $yn = Read-Choice "  Switch to '$tgt'? [y/N] "
+                    Write-Host "  Close Antigravity before switching." -ForegroundColor Yellow
+                    $yn = Read-Choice "  Switch to '$tgtLabel'? [y/N] "
                     if ($yn -notmatch "^[Yy]$") {
                         Write-Host "  Cancelled." -ForegroundColor Yellow
                         Wait-Key; continue
                     }
 
-                    Write-Host "  Saving current session as '$active'..." -ForegroundColor Cyan
+                    Write-Host "  Saving '$active'..." -ForegroundColor Cyan
                     if (Test-Path "$PROFILES_DIR\$active") {
                         Remove-Item "$PROFILES_DIR\$active" -Recurse -Force
                     }
                     Rename-Item $GEMINI_DIR "$PROFILES_DIR\$active"
 
-                    Write-Host "  Restoring profile '$tgt'..." -ForegroundColor Cyan
+                    Write-Host "  Restoring '$tgtLabel'..." -ForegroundColor Cyan
                     Rename-Item "$PROFILES_DIR\$tgt" $GEMINI_DIR
 
                     Set-Content $ACTIVE_FILE $tgt -NoNewline
@@ -1012,10 +1166,14 @@ function Menu-Accounts {
                     $script:BROWSER_PROF_DIR = "$GEMINI_DIR\antigravity-browser-profile"
                     $script:BP_DEF = "$BROWSER_PROF_DIR\Default"
                     $script:BACKUP_DIR = "$GEMINI_DIR\backups"
-                    Write-Host "  Switched to '$tgt'." -ForegroundColor Green
+                    $script:GemCacheTime = [datetime]::MinValue
+                    $script:GemCacheResult = ""
+                    $script:CluCacheTime = [datetime]::MinValue
+                    $script:CluCacheResult = ""
+                    Write-Host "  Switched to '$tgtLabel'." -ForegroundColor Green
                     Wait-Key
                 } else {
-                    Write-Host "  Invalid selection." -ForegroundColor Red
+                    Write-Host "  Invalid." -ForegroundColor Red
                     Wait-Key
                 }
             }
@@ -1233,7 +1391,7 @@ function Main-Menu {
         Draw-BoxLine "  [3]  Network Fixer          DNS, connectivity, 403"
         Draw-BoxLine "  [4]  Troubleshooter         Diagnose & auto-fix"
         Draw-BoxLine "  [5]  Usage & Rate Limits    Stats + reset timer"
-        Draw-BoxLine "  [6]  Account Switcher       Manage profiles"
+        Draw-BoxLine "  [6]  Account Dashboard      Profiles + model status"
         Draw-BoxLine "  [7]  Browser Backup         Backup system browsers"
         Draw-BoxEmpty
         Draw-BoxLine "  [8]  Fix Everything         One-click comprehensive fix" -Color Green

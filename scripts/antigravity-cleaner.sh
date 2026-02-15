@@ -735,9 +735,64 @@ menu_usage() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  6. Account Switcher
+#  6. Account Dashboard
 # ═══════════════════════════════════════════════════════════════════════════════
-get_active() { [ -f "$ACTIVE_FILE" ] && cat "$ACTIVE_FILE" 2>/dev/null | tr -d '\n' || echo "default"; }
+LABEL_FILE=".antigravity-label"
+_GEM_CACHE_TIME=0 _GEM_CACHE=""
+_CLU_CACHE_TIME=0 _CLU_CACHE=""
+
+get_active() { [ -f "$ACTIVE_FILE" ] && head -1 "$ACTIVE_FILE" 2>/dev/null | tr -d '\n' || echo "default"; }
+
+get_email() {
+    local dir="$1"
+    [ -f "$dir/$LABEL_FILE" ] && head -1 "$dir/$LABEL_FILE" 2>/dev/null | tr -d '\n' || echo ""
+}
+
+set_email() { echo "$2" > "$1/$LABEL_FILE"; }
+
+count_month_sessions() {
+    local cdir="$1/antigravity/conversations"
+    [ -d "$cdir" ] || { echo "0"; return; }
+    local now_s; now_s=$(date +%s); local cnt=0
+    for d in "$cdir"/*/; do
+        [ -d "$d" ] || continue
+        local mt; mt=$(file_mtime "$d")
+        (( now_s - mt < 2592000 )) && (( cnt++ ))
+    done
+    echo "$cnt"
+}
+
+check_gemini_status() {
+    local now_s; now_s=$(date +%s)
+    if (( now_s - _GEM_CACHE_TIME < 30 )) && [ -n "$_GEM_CACHE" ]; then
+        echo "$_GEM_CACHE"; return
+    fi
+    local code; code=$(curl -sL --max-time 5 -o /dev/null -w '%{http_code}' https://gemini.google.com 2>/dev/null)
+    _GEM_CACHE_TIME=$now_s
+    case "$code" in
+        429) _GEM_CACHE="limited";;
+        200|301|302|303) _GEM_CACHE="available";;
+        403) _GEM_CACHE="forbidden";;
+        *) _GEM_CACHE="unknown";;
+    esac
+    echo "$_GEM_CACHE"
+}
+
+check_claude_status() {
+    local now_s; now_s=$(date +%s)
+    if (( now_s - _CLU_CACHE_TIME < 30 )) && [ -n "$_CLU_CACHE" ]; then
+        echo "$_CLU_CACHE"; return
+    fi
+    local code; code=$(curl -sL --max-time 5 -o /dev/null -w '%{http_code}' https://alkalimetal-pa.clients6.google.com 2>/dev/null)
+    _CLU_CACHE_TIME=$now_s
+    case "$code" in
+        429) _CLU_CACHE="limited";;
+        200|301|302|303|404) _CLU_CACHE="available";;
+        403) _CLU_CACHE="forbidden";;
+        *) _CLU_CACHE="unknown";;
+    esac
+    echo "$_CLU_CACHE"
+}
 
 menu_accounts() {
     while true; do
@@ -745,23 +800,91 @@ menu_accounts() {
         local active; active=$(get_active)
         mkdir -p "$PROFILES_DIR" 2>/dev/null
 
-        box_top; box_title "Account Switcher"; box_empty
-        box_line "  ${GREEN}●${RST}  Active: ${WHITE}${BOLD}${active}${RST}"
+        # ── Reset countdown ──
+        local now_s; now_s=$(date +%s)
+        local year; year=$(date +%Y); local mon; mon=$(date +%m)
+        local day; day=$(date +%d); day=${day#0}
+        local dim
+        if [[ "$OSTYPE" == darwin* ]]; then
+            dim=$(date -v1d -v+1m -v-1d +%d 2>/dev/null || echo 30)
+        else
+            dim=$(date -d "${year}-${mon}-01 +1 month -1 day" +%d 2>/dev/null || echo 30)
+        fi; dim=${dim#0}
+        local reset_ts reset_str
+        if [[ "$OSTYPE" == darwin* ]]; then
+            reset_ts=$(date -v1d -v+1m -v0H -v0M -v0S +%s 2>/dev/null || echo 0)
+            reset_str=$(date -v1d -v+1m "+%b %d, %Y %I:%M %p" 2>/dev/null)
+        else
+            local nm; nm=$(date -d "${year}-${mon}-01 +1 month" "+%Y-%m-01" 2>/dev/null)
+            reset_ts=$(date -d "$nm 00:00:00" +%s 2>/dev/null || echo 0)
+            reset_str=$(date -d "$nm 00:00:00" "+%b %d, %Y %I:%M %p" 2>/dev/null)
+        fi
+        local sl=$(( reset_ts - now_s )); (( sl < 0 )) && sl=0
+        local dl=$(( sl/86400 )) hl=$(( sl%86400/3600 )) ml=$(( sl%3600/60 ))
+
+        box_top; box_title "Account Dashboard"; box_empty
+        box_line "  ${WHITE}Rate Limit Resets${RST}  ${GREEN}${BOLD}${reset_str}${RST}"
+        box_line "  ${WHITE}Countdown${RST}          ${YELLOW}${BOLD}${dl}d ${hl}h ${ml}m${RST}"
+        box_empty
+        local pbar; pbar=$(progress_bar "$day" "$dim" 30)
+        box_line "  ${pbar}"
+        box_empty; box_sep; box_empty
+
+        # ── Active account ──
+        local act_email; act_email=$(get_email "$GEMINI_DIR")
+        local act_label="${act_email:-${active}}"
+        local act_sess; act_sess=$(count_month_sessions "$GEMINI_DIR")
+        local act_sz; act_sz=$(get_size "$GEMINI_DIR")
+
+        printf "  ${DGRAY}${VT}${RST}  Checking models…\r" >/dev/tty
+        local gem_st; gem_st=$(check_gemini_status)
+        local clu_st; clu_st=$(check_claude_status)
+
+        # Format Gemini status
+        local gem_icon gem_text
+        case "$gem_st" in
+            available) gem_icon="${GREEN}✓${RST}"; gem_text="${GREEN}Available${RST}";;
+            limited)   gem_icon="${RED}✗${RST}"; gem_text="${RED}Rate limited${RST} — resets ${YELLOW}${dl}d ${hl}h ${ml}m${RST}";;
+            forbidden) gem_icon="${RED}!${RST}"; gem_text="${RED}Forbidden${RST}";;
+            *)         gem_icon="${YELLOW}?${RST}"; gem_text="${YELLOW}Unknown${RST}";;
+        esac
+        # Format Claude status
+        local clu_icon clu_text
+        case "$clu_st" in
+            available) clu_icon="${GREEN}✓${RST}"; clu_text="${GREEN}Available${RST}";;
+            limited)   clu_icon="${RED}✗${RST}"; clu_text="${RED}Rate limited${RST} — resets ${YELLOW}${dl}d ${hl}h ${ml}m${RST}";;
+            forbidden) clu_icon="${RED}!${RST}"; clu_text="${RED}Forbidden${RST}";;
+            *)         clu_icon="${YELLOW}?${RST}"; clu_text="${YELLOW}Unknown${RST}";;
+        esac
+
+        box_line "  ${GREEN}●${RST}  ${WHITE}${BOLD}${act_label}${RST}  ${DGRAY}(active)${RST}"
+        box_line "     ${MAGENTA}Gemini${RST}  ${gem_icon}  ${gem_text}"
+        box_line "     ${BLUE}Claude${RST}  ${clu_icon}  ${clu_text}"
+        box_line "     ${DGRAY}${act_sess} sessions this month  ·  ${act_sz}${RST}"
         box_empty
 
+        # ── Saved profiles ──
         local profiles=() idx=1
         for pdir in "$PROFILES_DIR"/*/; do
             [ -d "$pdir" ] || continue
             local pname; pname=$(basename "$pdir"); profiles+=("$pname")
-            local mark=""; [[ "$pname" == "$active" ]] && mark=" ${GREEN}★${RST}"
+            local pemail; pemail=$(get_email "$pdir")
+            local plabel="${pemail:-$pname}"
+            local psess; psess=$(count_month_sessions "$pdir")
             local psz; psz=$(get_size "$pdir")
-            box_line "  ${CYAN}[${WHITE}${idx}${CYAN}]${RST}  $(printf '%-20s' "$pname") ${DGRAY}${psz}${RST}${mark}"
+
+            box_line "  ${DGRAY}○${RST}  ${CYAN}[${WHITE}${idx}${CYAN}]${RST}  ${WHITE}${plabel}${RST}"
+            box_line "     ${DGRAY}?${RST}  ${DGRAY}Switch to this account to check status${RST}"
+            box_line "     ${DGRAY}${psess} sessions this month  ·  ${psz}${RST}"
+            box_empty
             (( idx++ ))
         done
-        (( ${#profiles[@]} == 0 )) && box_line "  ${DGRAY}No saved profiles yet.${RST}"
+        (( ${#profiles[@]} == 0 )) && { box_line "  ${DGRAY}No saved profiles. Press [s] to save.${RST}"; box_empty; }
 
-        box_empty; box_sep; box_empty
-        box_line "  ${CYAN}[${WHITE}s${CYAN}]${RST}  Save current as new profile"
+        box_sep; box_empty
+        box_line "  ${CYAN}[${WHITE}s${CYAN}]${RST}  Save current account"
+        box_line "  ${CYAN}[${WHITE}e${CYAN}]${RST}  Set Gmail label for active account"
+        box_line "  ${CYAN}[${WHITE}r${CYAN}]${RST}  Refresh status"
         box_line "  ${CYAN}[${RED}d${CYAN}]${RST}  ${RED}Delete a profile${RST}"
         box_line "  ${CYAN}[${DGRAY}b${CYAN}]${RST}  ${DGRAY}Back${RST}"
         box_empty; box_bot
@@ -770,8 +893,25 @@ menu_accounts() {
         [[ -z "$ch" ]] && continue; printf "\n"
 
         case "$ch" in
+            e|E)
+                printf "  Gmail for active account: "; local em; em=$(read_key)
+                em=$(echo "$em" | tr -cd 'a-zA-Z0-9@._+ -')
+                [ -z "$em" ] && { err_ "Empty."; wait_key; continue; }
+                set_email "$GEMINI_DIR" "$em"
+                ok_ "Label set: ${em}"; wait_key;;
+            r|R)
+                _GEM_CACHE_TIME=0; _GEM_CACHE=""
+                _CLU_CACHE_TIME=0; _CLU_CACHE=""
+                info_ "Refreshing…"; continue;;
             s|S)
-                printf "  Profile name: "; local pn; pn=$(read_key)
+                # Ask for email first if not set
+                local cur_email; cur_email=$(get_email "$GEMINI_DIR")
+                if [ -z "$cur_email" ]; then
+                    printf "  Gmail address for this account: "; local em; em=$(read_key)
+                    em=$(echo "$em" | tr -cd 'a-zA-Z0-9@._+ -')
+                    [ -n "$em" ] && set_email "$GEMINI_DIR" "$em"
+                fi
+                printf "  Profile name (short label): "; local pn; pn=$(read_key)
                 pn=$(echo "$pn" | tr -cd 'a-zA-Z0-9_-')
                 [ -z "$pn" ] && { err_ "Invalid name."; wait_key; continue; }
                 [ -d "$PROFILES_DIR/$pn" ] && {
@@ -789,7 +929,7 @@ menu_accounts() {
                 printf "  Number to delete: "; local dn; dn=$(read_key)
                 if [[ "$dn" =~ ^[0-9]+$ ]] && (( dn>=1 && dn<=${#profiles[@]} )); then
                     local tgt="${profiles[$((dn-1))]}"
-                    [[ "$tgt" == "$active" ]] && { err_ "Can't delete active profile."; wait_key; continue; }
+                    [[ "$tgt" == "$active" ]] && { err_ "Can't delete active."; wait_key; continue; }
                     rm -rf "${PROFILES_DIR:?}/$tgt"; ok_ "Deleted '${tgt}'."
                 else err_ "Invalid."; fi; wait_key;;
             b|B) return;;
@@ -797,18 +937,22 @@ menu_accounts() {
                 (( ch>=1 && ch<=${#profiles[@]} )) || { err_ "Invalid."; wait_key; continue; }
                 local tgt="${profiles[$((ch-1))]}"
                 [[ "$tgt" == "$active" ]] && { info_ "Already active."; wait_key; continue; }
+                local tgt_email; tgt_email=$(get_email "$PROFILES_DIR/$tgt")
+                local tgt_label="${tgt_email:-$tgt}"
                 warn_ "Close Antigravity before switching."
-                printf "  Switch to '${tgt}'? [y/N] "; local yn; yn=$(read_key)
+                printf "  Switch to '${tgt_label}'? [y/N] "; local yn; yn=$(read_key)
                 [[ "$yn" =~ ^[Yy]$ ]] || { warn_ "Cancelled."; wait_key; continue; }
                 printf "\n"; info_ "Saving '${active}'…"
                 rm -rf "${PROFILES_DIR:?}/$active" 2>/dev/null
                 [ -d "$GEMINI_DIR" ] && mv "$GEMINI_DIR" "$PROFILES_DIR/$active"
-                info_ "Restoring '${tgt}'…"
+                info_ "Restoring '${tgt_label}'…"
                 mv "$PROFILES_DIR/$tgt" "$GEMINI_DIR"
                 echo "$tgt" > "$ACTIVE_FILE"
                 AG_DIR="$GEMINI_DIR/antigravity"; BP_DIR="$GEMINI_DIR/antigravity-browser-profile"
                 BP_DEF="$BP_DIR/Default"; BACKUP_DIR="$GEMINI_DIR/backups"
-                ok_ "Switched to '${tgt}'."; wait_key;;
+                _GEM_CACHE_TIME=0; _GEM_CACHE=""
+                _CLU_CACHE_TIME=0; _CLU_CACHE=""
+                ok_ "Switched to '${tgt_label}'."; wait_key;;
             *) continue;;
         esac
     done
@@ -963,7 +1107,7 @@ main_menu() {
         box_line "  ${CYAN}[${WHITE}3${CYAN}]${RST}  ${WHITE}Network Fixer${RST}          ${DGRAY}DNS, connectivity, 403${RST}"
         box_line "  ${CYAN}[${WHITE}4${CYAN}]${RST}  ${WHITE}Troubleshooter${RST}         ${DGRAY}Diagnose & auto-fix${RST}"
         box_line "  ${CYAN}[${WHITE}5${CYAN}]${RST}  ${WHITE}Usage & Rate Limits${RST}    ${DGRAY}Stats + reset timer${RST}"
-        box_line "  ${CYAN}[${WHITE}6${CYAN}]${RST}  ${WHITE}Account Switcher${RST}       ${DGRAY}Manage profiles${RST}"
+        box_line "  ${CYAN}[${WHITE}6${CYAN}]${RST}  ${WHITE}Account Dashboard${RST}      ${DGRAY}Profiles + model status${RST}"
         box_line "  ${CYAN}[${WHITE}7${CYAN}]${RST}  ${WHITE}Browser Backup${RST}         ${DGRAY}Backup system browsers${RST}"
         box_empty
         box_line "  ${BG_SEL}${CYAN}[${WHITE}${BOLD}8${CYAN}]${RST}${BG_SEL}  ${LGREEN}${BOLD}Fix Everything${RST}${BG_SEL}         ${LGREEN}One-click comprehensive fix${RST}"
