@@ -1,94 +1,70 @@
-# Antigravity Cleaner 🚀
+# Antigravity Toolkit
 
-> **The Ultimate System Maintenance Tool for Power Users.**  
-> *Clean Cache. Safe Backups. Network Optimization.*
+> **TUI-only system toolkit for the Antigravity IDE.**
+> Cache cleaner, usage monitor, reset timer, account switcher, network fixer, browser backup.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-Antigravity Cleaner is a robust utility designed to keep your development environment and browser sessions healthy. It offers deep cleaning for AI artifacts, fixes common network connectivity issues (403/Region Lock), and safeguards your browser profiles with one-click backups.
+## Quick Start (No Install Required)
 
-## ✨ Features
-
-- **🧹 Precision Cleaning**:
-    - Selectively clean specific caches (Brain, Conversation, Context).
-    - "Deep Clean" mode for total reset.
-- **💾 Session Safeguard**:
-    - Automatically detects and backs up profiles for **Chrome, Edge, Brave, Opera, Vivaldi**.
-    - Creates timestamped `.zip` or `.tar.gz` archives.
-- **🔧 Network Optimizer**:
-    - One-click **DNS Flush**.
-    - Connectivity diagnostics for **Google Services & Gemini AI**.
-    - Fixes common "Region Lock" or "403 Forbidden" errors.
-- **💻 Cross-Platform TUI**:
-    - Beautiful, colorful Terminal User Interface for **Windows, Linux, and macOS**.
-    - No GUI required—runs instantly in your terminal.
-    - **New CLI Flags**:
-        - `--quick` / `-q`: Non-interactive mode (cleans all safely).
-        - `--dry-run` / `-d`: Preview what will be deleted.
-        - `--help`: Show usage information.
-
----
-
-## 🚀 Quick Start (No Install Required)
-
-The easiest way to use Antigravity Cleaner is via our one-line terminal command. This works without installing anything!
-
-### 🐧 Linux & 🍎 macOS
-Copy and paste this into your terminal:
+### Linux / macOS
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner/main/install.sh | bash
+curl -sL https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner/main/install.sh | bash
 ```
 
-### 🪟 Windows (PowerShell)
-Copy and paste this into PowerShell:
+### Windows (PowerShell)
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner/main/install.ps1 | iex
 ```
 
----
+## Features
 
-## 🛠️ Manual Installation (For Developers)
+| Feature | Description |
+|---|---|
+| **Cache Cleaner** | Selective or bulk cleanup of brain artifacts, conversations, recordings, context state, browser profile |
+| **Usage Dashboard** | Session counts, file counts, size breakdown with visual bars |
+| **Reset Timer** | Monthly cycle progress bar, days remaining, session rate projections |
+| **Account Switcher** | Save, switch, and delete Antigravity profiles (swaps `~/.gemini`) |
+| **Network Fixer** | DNS flush, Google/Gemini/API connectivity checks, 403 fix guide |
+| **Browser Backup** | Auto-detects Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc — creates timestamped archives |
 
-If you prefer to build the Electron GUI version or run from source:
+## CLI Flags
 
-1.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com/EhsanulHaqueSiam/Antigravity-Cleaner.git
-    cd antigravity-cleaner
-    ```
+```
+# Bash (Linux/macOS)
+./antigravity-cleaner.sh -q          # Quick clean (non-interactive)
+./antigravity-cleaner.sh -d -q       # Dry run (preview only)
+./antigravity-cleaner.sh -h          # Help
 
-2.  **Install Dependencies**:
-    ```bash
-    npm install
-    ```
+# PowerShell (Windows)
+.\antigravity-cleaner.ps1 -Quick     # Quick clean
+.\antigravity-cleaner.ps1 -DryRun -Quick  # Dry run
+.\antigravity-cleaner.ps1 -Help      # Help
+```
 
-3.  **Run Development Mode**:
-    ```bash
-    npm run dev
-    ```
+## Project Structure
 
-4.  **Build Binary**:
-    - **Linux**: `npm run build:linux` (Output: `dist/*.AppImage`)
-    - **Windows**: `npm run build:win` (Output: `dist/*.exe`)
-    - **macOS**: `npm run build:mac` (Output: `dist/*.dmg`)
+```
+scripts/
+  antigravity-cleaner.sh      Bash TUI (Linux/macOS)
+  antigravity-cleaner.ps1     PowerShell TUI (Windows)
+install.sh                    One-liner installer (curl | bash)
+install.ps1                   One-liner installer (iwr | iex)
+```
 
----
+## How Account Switching Works
 
-## 📂 Project Structure
+Profiles are stored in `~/.antigravity-profiles/`. When you switch:
 
-- **`scripts/`**: Contains the core logic scripts.
-    - `cleanup_antigravity_cache.sh`: The Bash TUI engine (Linux/macOS).
-    - `cleanup_antigravity.ps1`: The PowerShell TUI engine (Windows).
-- **`src/`**: React frontend code for the Electron GUI.
-- **`electron/`**: Main process code for the Electron App.
-- **`install.sh` / `install.ps1`**: Lightweight wrappers for one-line execution.
+1. Current `~/.gemini/` is moved to `~/.antigravity-profiles/<current>/`
+2. Target profile is moved from `~/.antigravity-profiles/<target>/` to `~/.gemini/`
+3. Active profile name is tracked in `~/.antigravity-profiles/.active`
 
-## 🤝 Contributing
+Close Antigravity before switching profiles.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## License
 
----
-*Built with ❤️ by Ehsanul Haque Siam.*
+MIT

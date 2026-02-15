@@ -1,33 +1,18 @@
+# ─── Antigravity Toolkit — One-liner Installer (Windows) ─────────────────────
+# Usage: iwr -useb https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner/main/install.ps1 | iex
 
-# Antigravity Cleaner Installer for Windows
-# Usage: iwr -useb ... | iex
+$Repo   = "EhsanulHaqueSiam/Antigravity-Cleaner"
+$Script = "scripts/antigravity-cleaner.ps1"
+$URL    = "https://raw.githubusercontent.com/$Repo/main/$Script"
+$Dest   = "$env:TEMP\antigravity-cleaner.ps1"
 
-$ErrorActionPreference = "SilentlyContinue"
-
-Write-Host ""
-Write-Host "🚀 Antigravity Cleaner Installer" -ForegroundColor Cyan
-Write-Host "==============================" -ForegroundColor DarkGray
-Write-Host ""
-
-# Repo Info
-$Repo = "EhsanulHaqueSiam/Antigravity-Cleaner"
-$LatestReleaseUrl = "https://api.github.com/repos/$Repo/releases/latest"
-
-$DownloadUrl = "https://raw.githubusercontent.com/$Repo/main/scripts/cleanup_antigravity.ps1"
-$DestPath = "$env:TEMP\cleanup_antigravity.ps1"
-
-Write-Host "  • Downloading script..." -ForegroundColor Cyan
+Write-Host "  Downloading Antigravity Toolkit..." -ForegroundColor Cyan
 try {
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $DestPath -ErrorAction Stop
-    Write-Host "  ✔ Download complete." -ForegroundColor Green
+    Invoke-WebRequest -Uri $URL -OutFile $Dest -UseBasicParsing -ErrorAction Stop
 } catch {
-    Write-Host "  ❌ Download failed: $_" -ForegroundColor Red
-    exit
+    Write-Host "  Download failed: $_" -ForegroundColor Red
+    exit 1
 }
 
-Write-Host "  • Launching TUI..." -ForegroundColor Green
-& $DestPath
-
-Write-Host ""
-Write-Host "✔ Setup initiated!" -ForegroundColor Green
-Write-Host ""
+Write-Host "  Launching..." -ForegroundColor Green
+& $Dest
