@@ -1,7 +1,7 @@
 # Antigravity Toolkit
 
 > **TUI-only system toolkit for the Antigravity IDE.**
-> Cache cleaner, usage monitor, reset timer, account switcher, network fixer, browser backup.
+> Cache cleaner, browser toolkit, troubleshooter, network fixer, account switcher, usage monitor, browser backup, and one-click Fix Everything.
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -22,14 +22,26 @@ iwr -useb https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner
 
 ## Features
 
-| Feature | Description |
-|---|---|
-| **Cache Cleaner** | Selective or bulk cleanup of brain artifacts, conversations, recordings, context state, browser profile |
-| **Usage Dashboard** | Session counts, file counts, size breakdown with visual bars |
-| **Reset Timer** | Monthly cycle progress bar, days remaining, session rate projections |
-| **Account Switcher** | Save, switch, and delete Antigravity profiles (swaps `~/.gemini`) |
-| **Network Fixer** | DNS flush, Google/Gemini/API connectivity checks, 403 fix guide |
-| **Browser Backup** | Auto-detects Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc — creates timestamped archives |
+| # | Feature | Description |
+|---|---|---|
+| 1 | **Cache Cleaner** | Selective or bulk cleanup of brain, conversations, recordings, context, code tracker, implicit memory, annotations, knowledge, playground, scratch |
+| 2 | **Browser Toolkit** | 10 options for Antigravity's built-in Chromium browser — clean cache, cookies, storage, history, service workers, shader caches, lock files, or full reset |
+| 3 | **Network Fixer** | DNS flush (distro-aware), Google/Gemini/API connectivity checks, 403 fix guide |
+| 4 | **Troubleshooter** | 9-point diagnostic scan with auto-fix — checks dirs, internet, DNS, API access, lock files, disk space, cache size, rate limits |
+| 5 | **Usage & Rate Limits** | Session counts, file counts, activity breakdown, monthly cycle progress bar, days until reset, session rate projections |
+| 6 | **Account Switcher** | Save, switch, and delete Antigravity profiles (swaps `~/.gemini`) |
+| 7 | **Browser Backup** | Auto-detects Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc — creates timestamped archives |
+| 8 | **Fix Everything** | One-click comprehensive fix: DNS flush + cache clean + browser clean + lock fix + connectivity test |
+
+### Aggressive / Nuclear Clean
+
+The Cache Cleaner includes a **Nuclear Clean** option (type `NUKE` to confirm) that removes all Antigravity data including browser profile, config, and installation ID — a full factory reset.
+
+### Supported Platforms
+
+- **Linux**: Arch, Manjaro, EndeavourOS, Garuda, Ubuntu, Debian, Pop!_OS, Linux Mint, Fedora, RHEL, CentOS, Rocky, openSUSE, and other distros
+- **macOS**: All versions
+- **Windows**: Windows 10/11 (PowerShell 5.1+)
 
 ## CLI Flags
 

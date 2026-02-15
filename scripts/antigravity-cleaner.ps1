@@ -1,9 +1,10 @@
 <#
 .SYNOPSIS
-    Antigravity Toolkit v3.0 - TUI Edition (Windows)
+    Antigravity Toolkit v3.1 - TUI Edition (Windows)
 .DESCRIPTION
-    Cache cleaner, usage monitor, account switcher, network fixer
-    and browser backup for the Antigravity IDE.
+    Complete system toolkit for the Antigravity IDE.
+    Cache cleaner, browser toolkit, troubleshooter, usage monitor,
+    account switcher, network fixer, and browser backup.
 .PARAMETER Quick
     Non-interactive mode - clean all cache safely
 .PARAMETER DryRun
@@ -21,15 +22,16 @@ param(
 
 $ErrorActionPreference = "SilentlyContinue"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Antigravity Toolkit v3.0"
+$Host.UI.RawUI.WindowTitle = "Antigravity Toolkit v3.1"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Configuration
 # ═══════════════════════════════════════════════════════════════════════════════
-$VERSION          = "3.0"
+$VERSION          = "3.1"
 $GEMINI_DIR       = "$env:USERPROFILE\.gemini"
 $ANTIGRAVITY_DIR  = "$GEMINI_DIR\antigravity"
 $BROWSER_PROF_DIR = "$GEMINI_DIR\antigravity-browser-profile"
+$BP_DEF           = "$BROWSER_PROF_DIR\Default"
 $BACKUP_DIR       = "$GEMINI_DIR\backups"
 $PROFILES_DIR     = "$env:USERPROFILE\.antigravity-profiles"
 $ACTIVE_FILE      = "$PROFILES_DIR\.active"
@@ -51,8 +53,9 @@ Options:
   -Help       Show this help
 
 Interactive mode (default):
-  Full TUI with cleaner, usage dashboard, reset timer,
-  account switcher, network fixer, and browser backup.
+  Full TUI with cache cleaner, browser toolkit, troubleshooter,
+  usage dashboard, account switcher, network fixer, browser backup,
+  and one-click Fix Everything.
 
 One-liner:
   iwr -useb https://raw.githubusercontent.com/EhsanulHaqueSiam/Antigravity-Cleaner/main/install.ps1 | iex
@@ -124,6 +127,14 @@ function Get-DirSizeInfo {
     return @{ Text = $text; Bytes = [long]$bytes; Color = $color }
 }
 
+function Format-Bytes {
+    param([long]$Bytes)
+    if     ($Bytes -gt 1GB) { return "{0:N1} GB" -f ($Bytes / 1GB) }
+    elseif ($Bytes -gt 1MB) { return "{0:N1} MB" -f ($Bytes / 1MB) }
+    elseif ($Bytes -gt 1KB) { return "{0:N1} KB" -f ($Bytes / 1KB) }
+    else                    { return "$Bytes B" }
+}
+
 function Get-ItemCount {
     param([string]$Path, [switch]$Dirs)
     if (-not (Test-Path $Path)) { return 0 }
@@ -154,6 +165,22 @@ function Clean-Dir {
     }
 }
 
+function Clean-File {
+    param([string]$Path, [string]$Name)
+    if (Test-Path $Path -PathType Leaf) {
+        if ($DryRun) {
+            Write-Host "  DRY  Would remove $Name" -ForegroundColor Yellow
+            return
+        }
+        try {
+            Remove-Item $Path -Force -ErrorAction Stop
+            Write-Host "  OK   $Name removed" -ForegroundColor Green
+        } catch {
+            Write-Host "  !!   $Name - Access denied" -ForegroundColor Red
+        }
+    }
+}
+
 function Wait-Key {
     Write-Host ""
     Write-Host "  Press Enter to continue... " -ForegroundColor DarkGray -NoNewline
@@ -174,6 +201,17 @@ function Get-ActiveProfile {
     return "default"
 }
 
+function Draw-ProgressBar {
+    param([int]$Current, [int]$Total, [int]$Width = 32)
+    if ($Total -le 0) { $Total = 1 }
+    $pct = [math]::Floor($Current * 100 / $Total)
+    $fill = [math]::Floor($Current * $Width / $Total)
+    if ($fill -gt $Width) { $fill = $Width }
+    $empty = $Width - $fill
+    $bar = ("=" * [math]::Max($fill, 0)) + ("-" * [math]::Max($empty, 0))
+    return "[$bar] ${pct}%"
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Header
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -185,24 +223,28 @@ function Show-Header {
     Draw-BoxLine "  A N T I G R A V I T Y" -Color Magenta
     Draw-BoxLine "  T O O L K I T" -Color Cyan
     Draw-BoxEmpty
-    Draw-BoxLine "  v$VERSION  -  Cache Cleaner & System Toolkit" -Color DarkGray
+    Draw-BoxLine "  v$VERSION  -  Windows  -  Complete System Toolkit" -Color DarkGray
     Draw-BoxEmpty
     Draw-BoxBot
     Write-Host ""
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Cache Status
+#  1. Cache Cleaner
 # ═══════════════════════════════════════════════════════════════════════════════
 function Show-CacheStatus {
     $dirs = [ordered]@{
-        "Brain (artifacts)"  = "$ANTIGRAVITY_DIR\brain"
-        "Browser Recordings" = "$ANTIGRAVITY_DIR\browser_recordings"
-        "Conversations"      = "$ANTIGRAVITY_DIR\conversations"
-        "Context State"      = "$ANTIGRAVITY_DIR\context_state"
-        "Code Tracker"       = "$ANTIGRAVITY_DIR\code_tracker"
-        "Implicit Memory"    = "$ANTIGRAVITY_DIR\implicit"
-        "Browser Profile"    = $BROWSER_PROF_DIR
+        "Brain (artifacts/plans)"  = "$ANTIGRAVITY_DIR\brain"
+        "Conversations"            = "$ANTIGRAVITY_DIR\conversations"
+        "Browser Recordings"       = "$ANTIGRAVITY_DIR\browser_recordings"
+        "Context State"            = "$ANTIGRAVITY_DIR\context_state"
+        "Code Tracker"             = "$ANTIGRAVITY_DIR\code_tracker"
+        "Implicit Memory"          = "$ANTIGRAVITY_DIR\implicit"
+        "Annotations"              = "$ANTIGRAVITY_DIR\annotations"
+        "Knowledge Base"           = "$ANTIGRAVITY_DIR\knowledge"
+        "Playground"               = "$ANTIGRAVITY_DIR\playground"
+        "Scratch Space"            = "$ANTIGRAVITY_DIR\scratch"
+        "Browser Profile (full)"   = $BROWSER_PROF_DIR
     }
 
     Draw-BoxTop
@@ -218,19 +260,13 @@ function Show-CacheStatus {
     }
 
     Draw-BoxSep
-    $totalText = if     ($totalBytes -gt 1GB) { "{0:N1} GB" -f ($totalBytes / 1GB) }
-                 elseif ($totalBytes -gt 1MB) { "{0:N1} MB" -f ($totalBytes / 1MB) }
-                 elseif ($totalBytes -gt 1KB) { "{0:N1} KB" -f ($totalBytes / 1KB) }
-                 else                         { "$totalBytes B" }
+    $totalText = Format-Bytes -Bytes $totalBytes
     $padded = "TOTAL".PadRight(30) + $totalText.PadLeft(12)
     Draw-BoxLine "  $padded" -Color White
     Draw-BoxBot
     Write-Host ""
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Feature: Cache Cleaner
-# ═══════════════════════════════════════════════════════════════════════════════
 function Menu-Cleaner {
     while ($true) {
         Show-Header
@@ -243,14 +279,14 @@ function Menu-Cleaner {
         Draw-BoxLine "  [2]  Conversations"
         Draw-BoxLine "  [3]  Brain Artifacts"
         Draw-BoxLine "  [4]  Context State"
-        Draw-BoxLine "  [5]  Code Tracker"
-        Draw-BoxLine "  [6]  Implicit Memory"
-        Draw-BoxLine "  [7]  Browser Profile"
+        Draw-BoxLine "  [5]  Code Tracker + Annotations"
+        Draw-BoxLine "  [6]  Implicit Memory + Knowledge"
+        Draw-BoxLine "  [7]  Playground + Scratch"
         Draw-BoxEmpty
-        Draw-BoxLine "  [8]  Clean ALL cache (recommended)" -Color Green
-        Draw-BoxLine "  [9]  Deep clean (everything)" -Color Red
+        Draw-BoxLine "  [8]  Clean ALL cache (safe)" -Color Green
+        Draw-BoxLine "  [9]  Aggressive clean (nuclear)" -Color Red
         Draw-BoxEmpty
-        Draw-BoxLine "  [b]  Back to main menu" -Color DarkGray
+        Draw-BoxLine "  [b]  Back" -Color DarkGray
         Draw-BoxEmpty
         Draw-BoxBot
 
@@ -265,32 +301,45 @@ function Menu-Cleaner {
             "2" { Clean-Dir "$ANTIGRAVITY_DIR\conversations" "Conversations"; Wait-Key }
             "3" { Clean-Dir "$ANTIGRAVITY_DIR\brain" "Brain Artifacts"; Wait-Key }
             "4" { Clean-Dir "$ANTIGRAVITY_DIR\context_state" "Context State"; Wait-Key }
-            "5" { Clean-Dir "$ANTIGRAVITY_DIR\code_tracker" "Code Tracker"; Wait-Key }
-            "6" { Clean-Dir "$ANTIGRAVITY_DIR\implicit" "Implicit Memory"; Wait-Key }
-            "7" { Clean-Dir $BROWSER_PROF_DIR "Browser Profile"; Wait-Key }
-            "8" {
-                Clean-Dir "$ANTIGRAVITY_DIR\brain" "Brain Artifacts"
-                Clean-Dir "$ANTIGRAVITY_DIR\browser_recordings" "Browser Recordings"
-                Clean-Dir "$ANTIGRAVITY_DIR\conversations" "Conversations"
-                Clean-Dir "$ANTIGRAVITY_DIR\context_state" "Context State"
+            "5" {
                 Clean-Dir "$ANTIGRAVITY_DIR\code_tracker" "Code Tracker"
+                Clean-Dir "$ANTIGRAVITY_DIR\annotations" "Annotations"
+                Wait-Key
+            }
+            "6" {
                 Clean-Dir "$ANTIGRAVITY_DIR\implicit" "Implicit Memory"
+                Clean-Dir "$ANTIGRAVITY_DIR\knowledge" "Knowledge Base"
+                Wait-Key
+            }
+            "7" {
+                Clean-Dir "$ANTIGRAVITY_DIR\playground" "Playground"
+                Clean-Dir "$ANTIGRAVITY_DIR\scratch" "Scratch Space"
+                Wait-Key
+            }
+            "8" {
+                foreach ($d in @("brain","conversations","browser_recordings","context_state","code_tracker","implicit","annotations","knowledge","playground","scratch")) {
+                    Clean-Dir "$ANTIGRAVITY_DIR\$d" $d
+                }
                 Write-Host ""; Write-Host "  All cache cleaned." -ForegroundColor Green
                 Wait-Key
             }
             "9" {
-                Write-Host "  WARNING: Deep clean removes ALL data including browser profile." -ForegroundColor Yellow
-                $yn = Read-Choice "  Continue? [y/N] "
-                if ($yn -match "^[Yy]$") {
+                Write-Host "  NUCLEAR CLEAN: This removes ALL data including" -ForegroundColor Red
+                Write-Host "  browser profile, config, installation ID - everything." -ForegroundColor Red
+                Write-Host "  Antigravity will be fully reset." -ForegroundColor Red
+                Write-Host ""
+                $confirm = Read-Choice "  Type NUKE to confirm: "
+                if ($confirm -eq "NUKE") {
                     Write-Host ""
-                    Clean-Dir "$ANTIGRAVITY_DIR\brain" "Brain Artifacts"
-                    Clean-Dir "$ANTIGRAVITY_DIR\browser_recordings" "Browser Recordings"
-                    Clean-Dir "$ANTIGRAVITY_DIR\conversations" "Conversations"
-                    Clean-Dir "$ANTIGRAVITY_DIR\context_state" "Context State"
-                    Clean-Dir "$ANTIGRAVITY_DIR\code_tracker" "Code Tracker"
-                    Clean-Dir "$ANTIGRAVITY_DIR\implicit" "Implicit Memory"
+                    foreach ($d in @("brain","conversations","browser_recordings","context_state","code_tracker","implicit","annotations","knowledge","playground","scratch")) {
+                        Clean-Dir "$ANTIGRAVITY_DIR\$d" $d
+                    }
                     Clean-Dir $BROWSER_PROF_DIR "Browser Profile"
-                    Write-Host ""; Write-Host "  Deep clean complete." -ForegroundColor Green
+                    Clean-File "$ANTIGRAVITY_DIR\mcp_config.json" "MCP Config"
+                    Clean-File "$ANTIGRAVITY_DIR\user_settings.pb" "User Settings"
+                    Clean-File "$ANTIGRAVITY_DIR\browserOnboardingStatus.txt" "Onboarding Status"
+                    Clean-File "$GEMINI_DIR\GEMINI.md" "GEMINI.md"
+                    Write-Host ""; Write-Host "  Nuclear clean complete. Restart Antigravity." -ForegroundColor Green
                 } else {
                     Write-Host "  Cancelled." -ForegroundColor Yellow
                 }
@@ -303,7 +352,441 @@ function Menu-Cleaner {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Feature: Usage Dashboard
+#  2. Browser Toolkit (Antigravity's built-in Chromium browser)
+# ═══════════════════════════════════════════════════════════════════════════════
+function Menu-Browser {
+    while ($true) {
+        Show-Header
+
+        Draw-BoxTop
+        Draw-BoxTitle "Antigravity Browser Toolkit"
+        Draw-BoxEmpty
+
+        # Sizes
+        $cacheSz = Get-DirSizeInfo "$BP_DEF\Cache"
+        $codeSz  = Get-DirSizeInfo "$BP_DEF\Code Cache"
+        $gpuSz   = Get-DirSizeInfo "$BP_DEF\GPUCache"
+        $lsSz    = Get-DirSizeInfo "$BP_DEF\Local Storage"
+        $ssSz    = Get-DirSizeInfo "$BP_DEF\Session Storage"
+        $swSz    = Get-DirSizeInfo "$BP_DEF\Service Worker"
+        $shaderSz = Get-DirSizeInfo "$BROWSER_PROF_DIR\ShaderCache"
+        $compSz  = Get-DirSizeInfo "$BROWSER_PROF_DIR\component_crx_cache"
+        $sbSz    = Get-DirSizeInfo "$BROWSER_PROF_DIR\Safe Browsing"
+        $profTotal = Get-DirSizeInfo $BROWSER_PROF_DIR
+
+        Draw-BoxLine "  Browser profile:          $($profTotal.Text)"
+        Draw-BoxLine "    Default\Cache:           $($cacheSz.Text)" -Color DarkGray
+        Draw-BoxLine "    Default\Code Cache:      $($codeSz.Text)" -Color DarkGray
+        Draw-BoxLine "    Default\GPUCache:        $($gpuSz.Text)" -Color DarkGray
+        Draw-BoxLine "    Default\Local Storage:   $($lsSz.Text)" -Color DarkGray
+        Draw-BoxLine "    ShaderCache:             $($shaderSz.Text)" -Color DarkGray
+        Draw-BoxLine "    component_crx_cache:     $($compSz.Text)" -Color DarkGray
+        Draw-BoxLine "    Safe Browsing:           $($sbSz.Text)" -Color DarkGray
+
+        $hasLock = "No"
+        if ((Test-Path "$BP_DEF\SingletonLock") -or (Test-Path "$BP_DEF\LOCK")) {
+            $hasLock = "YES"
+        }
+        Draw-BoxLine "    Lock files:              $hasLock"
+        Draw-BoxEmpty
+        Draw-BoxSep
+        Draw-BoxEmpty
+
+        Draw-BoxLine "  [1]  Clean browser cache (Cache/Code/GPU)"
+        Draw-BoxLine "  [2]  Clean cookies & sessions"
+        Draw-BoxLine "  [3]  Clean local/session storage"
+        Draw-BoxLine "  [4]  Clean Service Workers & IndexedDB"
+        Draw-BoxLine "  [5]  Clean shader/GPU caches"
+        Draw-BoxLine "  [6]  Clean component cache & Safe Browsing"
+        Draw-BoxLine "  [7]  Fix lock files (SingletonLock/LOCK)"
+        Draw-BoxLine "  [8]  Clean browsing history"
+        Draw-BoxEmpty
+        Draw-BoxLine "  [9]  Clean ALL browser data" -Color Green
+        Draw-BoxLine "  [0]  Full browser profile reset" -Color Red
+        Draw-BoxEmpty
+        Draw-BoxLine "  [b]  Back" -Color DarkGray
+        Draw-BoxEmpty
+        Draw-BoxBot
+
+        Write-Host ""
+        $ch = Read-Choice
+
+        if ([string]::IsNullOrWhiteSpace($ch)) { continue }
+
+        Write-Host ""
+        switch ($ch) {
+            "1" {
+                Clean-Dir "$BP_DEF\Cache" "Browser Cache"
+                Clean-Dir "$BP_DEF\Code Cache" "Code Cache"
+                Clean-Dir "$BP_DEF\GPUCache" "GPU Cache"
+                Clean-Dir "$BP_DEF\DawnGraphiteCache" "Dawn Graphite Cache"
+                Clean-Dir "$BP_DEF\DawnWebGPUCache" "Dawn WebGPU Cache"
+                Wait-Key
+            }
+            "2" {
+                Clean-File "$BP_DEF\Cookies" "Cookies"
+                Clean-File "$BP_DEF\Cookies-journal" "Cookies journal"
+                Clean-File "$BP_DEF\Safe Browsing Cookies" "Safe Browsing Cookies"
+                Clean-File "$BP_DEF\Safe Browsing Cookies-journal" "SB Cookies journal"
+                Clean-Dir "$BP_DEF\Sessions" "Sessions"
+                Wait-Key
+            }
+            "3" {
+                Clean-Dir "$BP_DEF\Local Storage" "Local Storage"
+                Clean-Dir "$BP_DEF\Session Storage" "Session Storage"
+                Clean-Dir "$BP_DEF\WebStorage" "WebStorage"
+                Clean-Dir "$BP_DEF\SharedStorage" "Shared Storage"
+                Wait-Key
+            }
+            "4" {
+                Clean-Dir "$BP_DEF\Service Worker" "Service Workers"
+                Clean-Dir "$BP_DEF\blob_storage" "Blob Storage"
+                Clean-Dir "$BP_DEF\Shared Dictionary" "Shared Dictionary"
+                Wait-Key
+            }
+            "5" {
+                Clean-Dir "$BROWSER_PROF_DIR\ShaderCache" "ShaderCache"
+                Clean-Dir "$BROWSER_PROF_DIR\GrShaderCache" "GrShaderCache"
+                Clean-Dir "$BROWSER_PROF_DIR\GraphiteDawnCache" "GraphiteDawnCache"
+                Clean-Dir "$BP_DEF\GPUCache" "Default GPUCache"
+                Clean-Dir "$BP_DEF\DawnGraphiteCache" "Dawn Graphite"
+                Clean-Dir "$BP_DEF\DawnWebGPUCache" "Dawn WebGPU"
+                Wait-Key
+            }
+            "6" {
+                Clean-Dir "$BROWSER_PROF_DIR\component_crx_cache" "Component CRX Cache"
+                Clean-Dir "$BROWSER_PROF_DIR\Safe Browsing" "Safe Browsing Data"
+                Clean-Dir "$BROWSER_PROF_DIR\extensions_crx_cache" "Extensions Cache"
+                Clean-Dir "$BROWSER_PROF_DIR\WidevineCdm" "Widevine DRM"
+                Clean-Dir "$BROWSER_PROF_DIR\WasmTtsEngine" "WASM TTS Engine"
+                Wait-Key
+            }
+            "7" {
+                Write-Host "  Removing lock files..." -ForegroundColor Cyan
+                Clean-File "$BP_DEF\SingletonLock" "SingletonLock"
+                Clean-File "$BP_DEF\LOCK" "LOCK"
+                Clean-File "$BP_DEF\lockfile" "lockfile"
+                Write-Host "  Lock files cleared. Try restarting Antigravity." -ForegroundColor Green
+                Wait-Key
+            }
+            "8" {
+                Clean-File "$BP_DEF\History" "History"
+                Clean-File "$BP_DEF\History-journal" "History journal"
+                Clean-File "$BP_DEF\Favicons" "Favicons"
+                Clean-File "$BP_DEF\Favicons-journal" "Favicons journal"
+                Clean-File "$BP_DEF\Top Sites" "Top Sites"
+                Clean-File "$BP_DEF\Top Sites-journal" "Top Sites journal"
+                Clean-File "$BP_DEF\Shortcuts" "Shortcuts"
+                Clean-File "$BP_DEF\Shortcuts-journal" "Shortcuts journal"
+                Clean-File "$BP_DEF\Network Action Predictor" "Network Predictor"
+                Wait-Key
+            }
+            "9" {
+                Write-Host "  Cleaning all browser data..." -ForegroundColor Cyan
+                # Caches in Default
+                foreach ($d in @("Cache","Code Cache","GPUCache","DawnGraphiteCache","DawnWebGPUCache",
+                                 "Local Storage","Session Storage","WebStorage","SharedStorage",
+                                 "Service Worker","blob_storage","Sessions","Shared Dictionary",
+                                 "Download Service","Feature Engagement Tracker")) {
+                    Clean-Dir "$BP_DEF\$d" $d
+                }
+                # GPU caches at top level
+                foreach ($d in @("ShaderCache","GrShaderCache","GraphiteDawnCache")) {
+                    Clean-Dir "$BROWSER_PROF_DIR\$d" $d
+                }
+                # Files
+                foreach ($f in @("Cookies","Cookies-journal","History","History-journal",
+                                 "Favicons","Favicons-journal","Top Sites","Top Sites-journal",
+                                 "Shortcuts","Shortcuts-journal","Safe Browsing Cookies",
+                                 "Safe Browsing Cookies-journal","Network Action Predictor",
+                                 "Network Action Predictor-journal","DIPS")) {
+                    Clean-File "$BP_DEF\$f" $f
+                }
+                Clean-File "$BP_DEF\SingletonLock" "SingletonLock"
+                Clean-File "$BP_DEF\LOCK" "LOCK"
+                Clean-File "$BROWSER_PROF_DIR\BrowserMetrics-spare.pma" "BrowserMetrics"
+                Write-Host ""; Write-Host "  All browser data cleaned." -ForegroundColor Green
+                Wait-Key
+            }
+            "0" {
+                Write-Host "  WARNING: Full reset deletes the entire browser profile." -ForegroundColor Red
+                Write-Host "  You will lose all browser cookies, history, extensions." -ForegroundColor Red
+                Write-Host ""
+                $confirm = Read-Choice "  Type RESET to confirm: "
+                if ($confirm -eq "RESET") {
+                    Write-Host ""
+                    Clean-Dir $BROWSER_PROF_DIR "Entire Browser Profile"
+                    Write-Host "  Browser profile reset. Restart Antigravity." -ForegroundColor Green
+                } else {
+                    Write-Host "  Cancelled." -ForegroundColor Yellow
+                }
+                Wait-Key
+            }
+            { $_ -in "b","B" } { return }
+            default { continue }
+        }
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  3. Network Fixer
+# ═══════════════════════════════════════════════════════════════════════════════
+function Flush-DnsCache {
+    try {
+        $null = Start-Process -FilePath "ipconfig" -ArgumentList "/flushdns" -NoNewWindow -Wait -PassThru 2>$null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Test-Endpoint {
+    param([string]$Url, [string]$Label)
+    Write-Host "  $([char]0x2502)  $Label  $Url... " -NoNewline -ForegroundColor DarkGray
+    try {
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 8 -MaximumRedirection 5 -ErrorAction Stop
+        $code = $response.StatusCode
+        if ($code -in 200,301,302,303) {
+            Write-Host "OK ($code)" -ForegroundColor Green
+            return $true
+        } elseif ($code -eq 403) {
+            Write-Host "403 Forbidden" -ForegroundColor Red
+            return $false
+        } elseif ($code -eq 429) {
+            Write-Host "429 Rate Limited" -ForegroundColor DarkYellow
+            return $false
+        } else {
+            Write-Host "Failed ($code)" -ForegroundColor Red
+            return $false
+        }
+    } catch {
+        $status = $_.Exception.Response.StatusCode.value__
+        if ($status -eq 403) {
+            Write-Host "403 Forbidden" -ForegroundColor Red
+        } elseif ($status -eq 429) {
+            Write-Host "429 Rate Limited" -ForegroundColor DarkYellow
+        } else {
+            Write-Host "Failed ($status)" -ForegroundColor Red
+        }
+        return $false
+    }
+}
+
+function Menu-Network {
+    Show-Header
+
+    Draw-BoxTop
+    Draw-BoxTitle "Network Fixer (Windows)"
+    Draw-BoxEmpty
+
+    Write-Host "  $([char]0x2502)  DNS   Flushing cache... " -NoNewline -ForegroundColor DarkGray
+    if (Flush-DnsCache) { Write-Host "Done" -ForegroundColor Green }
+    else                { Write-Host "Failed" -ForegroundColor Red }
+
+    Test-Endpoint "https://www.google.com" "NET  "
+    Test-Endpoint "https://gemini.google.com" "GEM  "
+    Test-Endpoint "https://alkalimetal-pa.clients6.google.com" "API  "
+    Test-Endpoint "https://generativelanguage.googleapis.com" "GAPI "
+
+    Draw-BoxEmpty
+    Draw-BoxSep
+    Draw-BoxLine "  Common Fixes" -Color Yellow
+    Draw-BoxEmpty
+    Draw-BoxLine "  1. Restart Antigravity after DNS flush" -Color DarkGray
+    Draw-BoxLine "  2. Clean browser cache (Browser Toolkit > 1)" -Color DarkGray
+    Draw-BoxLine "  3. Reset browser profile (Browser Toolkit > 0)" -Color DarkGray
+    Draw-BoxLine "  4. Disable VPN / proxy" -Color DarkGray
+    Draw-BoxLine "  5. Switch Google account (Account Switcher)" -Color DarkGray
+    Draw-BoxLine "  6. Check firewall rules for Google domains" -Color DarkGray
+    Draw-BoxLine "  7. Try 'Fix Everything' (main menu > 8)" -Color DarkGray
+    Draw-BoxEmpty
+    Draw-BoxBot
+
+    Wait-Key
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  4. Troubleshooter
+# ═══════════════════════════════════════════════════════════════════════════════
+function Menu-Troubleshoot {
+    Show-Header
+
+    Draw-BoxTop
+    Draw-BoxTitle "Troubleshooter"
+    Draw-BoxEmpty
+    Draw-BoxLine "  Running diagnostics..." -Color DarkGray
+    Draw-BoxEmpty
+    Draw-BoxBot
+    Write-Host ""
+
+    $issues = 0
+    $fixes = @()
+
+    # 1. Antigravity directory
+    Write-Host "  [1/9] Antigravity directory... " -NoNewline -ForegroundColor Cyan
+    if ((Test-Path $GEMINI_DIR) -and (Test-Path $ANTIGRAVITY_DIR)) {
+        Write-Host "OK" -ForegroundColor Green
+    } else {
+        Write-Host "Missing" -ForegroundColor Red
+        $issues++
+    }
+
+    # 2. Internet
+    Write-Host "  [2/9] Internet connectivity... " -NoNewline -ForegroundColor Cyan
+    try {
+        $null = Invoke-WebRequest -Uri "https://www.google.com" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        Write-Host "OK" -ForegroundColor Green
+    } catch {
+        Write-Host "No internet" -ForegroundColor Red
+        $issues++
+        $fixes += "flush_dns"
+    }
+
+    # 3. DNS
+    Write-Host "  [3/9] DNS resolution... " -NoNewline -ForegroundColor Cyan
+    try {
+        $null = Resolve-DnsName "gemini.google.com" -ErrorAction Stop
+        Write-Host "OK" -ForegroundColor Green
+    } catch {
+        Write-Host "Uncertain" -ForegroundColor Yellow
+    }
+
+    # 4. Gemini API
+    Write-Host "  [4/9] Gemini API access... " -NoNewline -ForegroundColor Cyan
+    $apiCode = 0
+    try {
+        $r = Invoke-WebRequest -Uri "https://gemini.google.com" -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        $apiCode = $r.StatusCode
+        Write-Host "OK ($apiCode)" -ForegroundColor Green
+    } catch {
+        $apiCode = $_.Exception.Response.StatusCode.value__
+        if ($apiCode -eq 403) {
+            Write-Host "403 Forbidden" -ForegroundColor Red
+            $issues++
+            $fixes += "flush_dns"
+            $fixes += "clean_browser_cache"
+        } elseif ($apiCode -eq 429) {
+            Write-Host "429 Rate Limited - wait for reset" -ForegroundColor DarkYellow
+            $issues++
+        } else {
+            Write-Host "Failed ($apiCode)" -ForegroundColor Red
+            $issues++
+            $fixes += "flush_dns"
+        }
+    }
+
+    # 5. Alkalimetal API
+    Write-Host "  [5/9] Alkalimetal endpoint... " -NoNewline -ForegroundColor Cyan
+    try {
+        $r = Test-NetConnection -ComputerName "alkalimetal-pa.clients6.google.com" -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue
+        if ($r) { Write-Host "Reachable" -ForegroundColor Green }
+        else    { Write-Host "Blocked" -ForegroundColor Red; $issues++; $fixes += "flush_dns" }
+    } catch { Write-Host "Error" -ForegroundColor Red; $issues++ }
+
+    # 6. Browser profile
+    Write-Host "  [6/9] Browser profile... " -NoNewline -ForegroundColor Cyan
+    if (Test-Path $BROWSER_PROF_DIR) {
+        if (Test-Path "$BP_DEF\SingletonLock") {
+            Write-Host "Lock file present" -ForegroundColor Yellow
+            $issues++
+            $fixes += "fix_locks"
+        } else {
+            Write-Host "OK" -ForegroundColor Green
+        }
+    } else {
+        Write-Host "Not found (will be created)" -ForegroundColor DarkGray
+    }
+
+    # 7. Disk space
+    Write-Host "  [7/9] Disk space... " -NoNewline -ForegroundColor Cyan
+    try {
+        $drive = (Get-Item $env:USERPROFILE).PSDrive.Name
+        $freeGB = [math]::Round((Get-PSDrive $drive).Free / 1GB, 1)
+        $freeMB = [math]::Round((Get-PSDrive $drive).Free / 1MB)
+        if ($freeMB -gt 500) {
+            Write-Host "OK (${freeGB}GB free)" -ForegroundColor Green
+        } else {
+            Write-Host "Low (${freeMB}MB free)" -ForegroundColor Yellow
+            $issues++
+            $fixes += "clean_all_cache"
+        }
+    } catch {
+        Write-Host "Unknown" -ForegroundColor DarkGray
+    }
+
+    # 8. Cache size
+    Write-Host "  [8/9] Cache size... " -NoNewline -ForegroundColor Cyan
+    $cacheInfo = Get-DirSizeInfo $ANTIGRAVITY_DIR
+    if ($cacheInfo.Bytes -gt 2GB) {
+        Write-Host "Large ($($cacheInfo.Text)) - consider cleaning" -ForegroundColor DarkYellow
+        $fixes += "clean_all_cache"
+    } else {
+        Write-Host "OK ($($cacheInfo.Text))" -ForegroundColor Green
+    }
+
+    # 9. Rate limit check
+    Write-Host "  [9/9] Rate limit status... " -NoNewline -ForegroundColor Cyan
+    if ($apiCode -eq 429) {
+        Write-Host "Rate limited - check Reset Timer" -ForegroundColor Red
+    } else {
+        Write-Host "Not rate limited" -ForegroundColor Green
+    }
+
+    # Summary
+    Write-Host ""
+    Draw-BoxTop
+    Draw-BoxEmpty
+    if ($issues -eq 0) {
+        Draw-BoxLine "  All checks passed! No issues detected." -Color Green
+    } else {
+        Draw-BoxLine "  $issues issue(s) detected." -Color Yellow
+    }
+    Draw-BoxEmpty
+
+    if ($fixes.Count -gt 0) {
+        Draw-BoxSep
+        Draw-BoxEmpty
+        Draw-BoxLine "  [f]  Auto-fix all detected issues"
+    }
+    Draw-BoxLine "  [b]  Back" -Color DarkGray
+    Draw-BoxEmpty
+    Draw-BoxBot
+
+    Write-Host ""
+    $ch = Read-Choice
+
+    if ($ch -in "f","F" -and $fixes.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  Applying fixes..." -ForegroundColor Cyan
+        $uniqueFixes = $fixes | Select-Object -Unique
+        foreach ($fix in $uniqueFixes) {
+            switch ($fix) {
+                "flush_dns" {
+                    if (Flush-DnsCache) { Write-Host "  OK   DNS flushed" -ForegroundColor Green }
+                    else                { Write-Host "  !!   DNS flush failed" -ForegroundColor Yellow }
+                }
+                "clean_browser_cache" {
+                    Clean-Dir "$BP_DEF\Cache" "Browser Cache"
+                    Clean-Dir "$BP_DEF\Code Cache" "Code Cache"
+                }
+                "fix_locks" {
+                    Clean-File "$BP_DEF\SingletonLock" "SingletonLock"
+                    Clean-File "$BP_DEF\LOCK" "LOCK"
+                }
+                "clean_all_cache" {
+                    foreach ($d in @("brain","conversations","browser_recordings","context_state","code_tracker","implicit","annotations","knowledge","playground","scratch")) {
+                        Clean-Dir "$ANTIGRAVITY_DIR\$d" $d
+                    }
+                }
+            }
+        }
+        Write-Host ""; Write-Host "  Fixes applied. Restart Antigravity." -ForegroundColor Green
+        Wait-Key
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  5. Usage & Rate Limits
 # ═══════════════════════════════════════════════════════════════════════════════
 function Menu-Usage {
     Show-Header
@@ -313,13 +796,14 @@ function Menu-Usage {
     $recN   = Get-ItemCount "$ANTIGRAVITY_DIR\browser_recordings" -Dirs
     $ctxN   = Get-ItemCount "$ANTIGRAVITY_DIR\context_state"
     $codeN  = Get-ItemCount "$ANTIGRAVITY_DIR\code_tracker"
+    $annoN  = Get-ItemCount "$ANTIGRAVITY_DIR\annotations"
+    $knowN  = Get-ItemCount "$ANTIGRAVITY_DIR\knowledge"
 
     $convI  = Get-DirSizeInfo "$ANTIGRAVITY_DIR\conversations"
     $brainI = Get-DirSizeInfo "$ANTIGRAVITY_DIR\brain"
     $recI   = Get-DirSizeInfo "$ANTIGRAVITY_DIR\browser_recordings"
-    $ctxI   = Get-DirSizeInfo "$ANTIGRAVITY_DIR\context_state"
     $profI  = Get-DirSizeInfo $BROWSER_PROF_DIR
-    $totalB = $convI.Bytes + $brainI.Bytes + $recI.Bytes + $ctxI.Bytes + $profI.Bytes
+    $totalB = $convI.Bytes + $brainI.Bytes + $recI.Bytes + $profI.Bytes
 
     Draw-BoxTop
     Draw-BoxTitle "Usage Dashboard"
@@ -329,11 +813,10 @@ function Menu-Usage {
     Draw-BoxLine "  Browser Recordings       $recN sessions"
     Draw-BoxLine "  Context Snapshots        $ctxN files"
     Draw-BoxLine "  Code Tracker             $codeN files"
+    Draw-BoxLine "  Annotations              $annoN files"
+    Draw-BoxLine "  Knowledge                $knowN files"
     Draw-BoxSep
-    $totalText = if     ($totalB -gt 1GB) { "{0:N1} GB" -f ($totalB / 1GB) }
-                 elseif ($totalB -gt 1MB) { "{0:N1} MB" -f ($totalB / 1MB) }
-                 elseif ($totalB -gt 1KB) { "{0:N1} KB" -f ($totalB / 1KB) }
-                 else                     { "$totalB B" }
+    $totalText = Format-Bytes -Bytes $totalB
     Draw-BoxLine "  Total Cache              $totalText"
     Draw-BoxBot
 
@@ -359,94 +842,37 @@ function Menu-Usage {
     Draw-BoxLine "  This month     $monthN sessions" -Color Cyan
     Draw-BoxBot
 
-    # Size breakdown
-    if ($totalB -gt 0) {
-        Write-Host ""
-        Draw-BoxTop
-        Draw-BoxTitle "Size Breakdown"
-        Draw-BoxEmpty
-
-        $items = @(
-            @{ Name = "Conversations"; Bytes = $convI.Bytes },
-            @{ Name = "Brain"; Bytes = $brainI.Bytes },
-            @{ Name = "Recordings"; Bytes = $recI.Bytes },
-            @{ Name = "Context"; Bytes = $ctxI.Bytes },
-            @{ Name = "Browser Profile"; Bytes = $profI.Bytes }
-        )
-
-        foreach ($item in $items) {
-            $pct = [math]::Floor($item.Bytes * 100 / $totalB)
-            $bw = [math]::Floor($item.Bytes * 28 / $totalB)
-            $ew = 28 - $bw
-            $fill = "=" * [math]::Max($bw, 0)
-            $empty = "-" * [math]::Max($ew, 0)
-            $line = "  " + $item.Name.PadRight(16) + " " + $fill + $empty + " " + "${pct}%"
-            Draw-BoxLine $line
-        }
-
-        Draw-BoxEmpty
-        Draw-BoxBot
-    }
-
-    Wait-Key
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Feature: Reset Timer
-# ═══════════════════════════════════════════════════════════════════════════════
-function Menu-Reset {
-    Show-Header
-
-    $now = Get-Date
+    # Rate Limit / Reset Timer
     $dim = [DateTime]::DaysInMonth($now.Year, $now.Month)
     $dayNum = $now.Day
     $remaining = $dim - $dayNum
     $monthName = $now.ToString("MMMM")
     $nextMonth = $now.AddMonths(1).ToString("MMMM yyyy")
-    $pct = [math]::Floor($dayNum * 100 / $dim)
-
-    # Progress bar
-    $bw = [math]::Floor($dayNum * 32 / $dim)
-    $ew = 32 - $bw
-    $fill = "=" * [math]::Max($bw, 0)
-    $empty = "-" * [math]::Max($ew, 0)
-    $pbar = "[$fill$empty] ${pct}%"
-
-    Draw-BoxTop
-    Draw-BoxTitle "Usage Reset Timer"
-    Draw-BoxEmpty
-    Draw-BoxLine "  Current Cycle       $monthName $($now.Year)"
-    Draw-BoxLine "  Reset Date          $nextMonth 1"
-    Draw-BoxLine "  Days Remaining      $remaining days"
-    Draw-BoxEmpty
-    Draw-BoxLine "  $pbar" -Color Green
-    Draw-BoxEmpty
-    Draw-BoxBot
-
-    # Stats
-    $monthConvos = 0
-    if (Test-Path "$ANTIGRAVITY_DIR\conversations") {
-        Get-ChildItem "$ANTIGRAVITY_DIR\conversations" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            $age = ($now - $_.LastWriteTime).TotalSeconds
-            if ($age -lt 2592000) { $script:monthConvos++ }
-        }
-    }
 
     Write-Host ""
     Draw-BoxTop
-    Draw-BoxTitle "Cycle Statistics"
+    Draw-BoxTitle "Rate Limit Reset Timer"
     Draw-BoxEmpty
-    Draw-BoxLine "  Sessions this cycle    $monthConvos" -Color Cyan
+    Draw-BoxLine "  Current Cycle       $monthName $($now.Year)"
+    Draw-BoxLine "  Resets On           $nextMonth 1"
+    Draw-BoxLine "  Days Remaining      $remaining days"
+    Draw-BoxEmpty
+    $pbar = Draw-ProgressBar -Current $dayNum -Total $dim -Width 32
+    Draw-BoxLine "  $pbar" -Color Green
+    Draw-BoxEmpty
 
-    if ($dayNum -gt 0) {
-        $rate = [math]::Round($monthConvos / $dayNum, 1)
+    if ($dayNum -gt 0 -and $monthN -gt 0) {
+        $rate = [math]::Round($monthN / $dayNum, 1)
         $proj = [math]::Round($rate * $dim)
-        Draw-BoxLine "  Avg per day            $rate" -Color Cyan
-        Draw-BoxLine "  Projected this month   $proj" -Color Cyan
+        Draw-BoxSep
+        Draw-BoxEmpty
+        Draw-BoxLine "  Avg sessions/day    $rate" -Color Cyan
+        Draw-BoxLine "  Projected monthly   $proj" -Color Cyan
+        Draw-BoxEmpty
     }
 
-    Draw-BoxEmpty
-    Draw-BoxLine "  Usage typically resets on the 1st of each month." -Color DarkGray
+    Draw-BoxLine "  Free tier resets on the 1st of each month." -Color DarkGray
+    Draw-BoxLine "  If rate-limited, reduce usage or wait for reset." -Color DarkGray
     Draw-BoxEmpty
     Draw-BoxBot
 
@@ -454,7 +880,7 @@ function Menu-Reset {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Feature: Account Switcher
+#  6. Account Switcher
 # ═══════════════════════════════════════════════════════════════════════════════
 function Menu-Accounts {
     while ($true) {
@@ -493,7 +919,7 @@ function Menu-Accounts {
         Draw-BoxEmpty
         Draw-BoxLine "  [s]  Save current as new profile"
         Draw-BoxLine "  [d]  Delete a profile" -Color Red
-        Draw-BoxLine "  [b]  Back to main menu" -Color DarkGray
+        Draw-BoxLine "  [b]  Back" -Color DarkGray
         Draw-BoxEmpty
         Draw-BoxBot
 
@@ -577,6 +1003,7 @@ function Menu-Accounts {
                     Set-Content $ACTIVE_FILE $tgt -NoNewline
                     $script:ANTIGRAVITY_DIR = "$GEMINI_DIR\antigravity"
                     $script:BROWSER_PROF_DIR = "$GEMINI_DIR\antigravity-browser-profile"
+                    $script:BP_DEF = "$BROWSER_PROF_DIR\Default"
                     $script:BACKUP_DIR = "$GEMINI_DIR\backups"
                     Write-Host "  Switched to '$tgt'." -ForegroundColor Green
                     Wait-Key
@@ -591,64 +1018,7 @@ function Menu-Accounts {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Feature: Network Fixer
-# ═══════════════════════════════════════════════════════════════════════════════
-function Menu-Network {
-    Show-Header
-
-    Draw-BoxTop
-    Draw-BoxTitle "Network Fixer"
-    Draw-BoxEmpty
-
-    # DNS flush
-    Write-Host "  │  DNS  Flushing cache... " -NoNewline -ForegroundColor DarkGray
-    try {
-        $null = Start-Process -FilePath "ipconfig" -ArgumentList "/flushdns" -NoNewWindow -Wait -PassThru 2>$null
-        Write-Host "Done" -ForegroundColor Green
-    } catch {
-        Write-Host "Failed" -ForegroundColor Red
-    }
-
-    # Google
-    Write-Host "  │  NET  google.com... " -NoNewline -ForegroundColor DarkGray
-    try {
-        $r = Test-NetConnection -ComputerName "google.com" -InformationLevel Quiet -WarningAction SilentlyContinue
-        if ($r) { Write-Host "OK" -ForegroundColor Green }
-        else    { Write-Host "Unreachable" -ForegroundColor Red }
-    } catch { Write-Host "Error" -ForegroundColor Red }
-
-    # Gemini
-    Write-Host "  │  NET  gemini.google.com... " -NoNewline -ForegroundColor DarkGray
-    try {
-        $r = Test-NetConnection -ComputerName "gemini.google.com" -InformationLevel Quiet -WarningAction SilentlyContinue
-        if ($r) { Write-Host "OK" -ForegroundColor Green }
-        else    { Write-Host "Unreachable (check region/VPN)" -ForegroundColor Red }
-    } catch { Write-Host "Error" -ForegroundColor Red }
-
-    # Alkalimetal
-    Write-Host "  │  API  alkalimetal endpoint... " -NoNewline -ForegroundColor DarkGray
-    try {
-        $r = Test-NetConnection -ComputerName "alkalimetal-pa.clients6.google.com" -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue
-        if ($r) { Write-Host "Reachable" -ForegroundColor Green }
-        else    { Write-Host "Blocked" -ForegroundColor Red }
-    } catch { Write-Host "Error" -ForegroundColor Red }
-
-    Draw-BoxEmpty
-    Draw-BoxSep
-    Draw-BoxLine "  Common 403 Fixes" -Color Yellow
-    Draw-BoxEmpty
-    Draw-BoxLine "  1. Restart Antigravity after DNS flush" -Color DarkGray
-    Draw-BoxLine "  2. Clear browser profile (Cleaner > 7)" -Color DarkGray
-    Draw-BoxLine "  3. Disable VPN / proxy if active" -Color DarkGray
-    Draw-BoxLine "  4. Try switching Google account" -Color DarkGray
-    Draw-BoxEmpty
-    Draw-BoxBot
-
-    Wait-Key
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Feature: Browser Backup
+#  7. Browser Backup
 # ═══════════════════════════════════════════════════════════════════════════════
 function Menu-Backup {
     Show-Header
@@ -659,12 +1029,12 @@ function Menu-Backup {
 
     $browsers = [ordered]@{}
     $paths = [ordered]@{
-        "chrome"    = "$env:LOCALAPPDATA\Google\Chrome\User Data"
-        "edge"      = "$env:LOCALAPPDATA\Microsoft\Edge\User Data"
-        "brave"     = "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data"
-        "firefox"   = "$env:APPDATA\Mozilla\Firefox\Profiles"
-        "opera"     = "$env:APPDATA\Opera Software\Opera Stable"
-        "vivaldi"   = "$env:LOCALAPPDATA\Vivaldi\User Data"
+        "chrome"      = "$env:LOCALAPPDATA\Google\Chrome\User Data"
+        "edge"        = "$env:LOCALAPPDATA\Microsoft\Edge\User Data"
+        "brave"       = "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data"
+        "firefox"     = "$env:APPDATA\Mozilla\Firefox\Profiles"
+        "opera"       = "$env:APPDATA\Opera Software\Opera Stable"
+        "vivaldi"     = "$env:LOCALAPPDATA\Vivaldi\User Data"
         "antigravity" = $BROWSER_PROF_DIR
     }
 
@@ -696,7 +1066,7 @@ function Menu-Backup {
 
     Draw-BoxEmpty
     Draw-BoxLine "  [a]  Backup ALL detected browsers"
-    Draw-BoxLine "  [b]  Back to main menu" -Color DarkGray
+    Draw-BoxLine "  [b]  Back" -Color DarkGray
     Draw-BoxEmpty
     Draw-BoxBot
 
@@ -750,6 +1120,77 @@ function Menu-Backup {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  8. Fix Everything (one-click)
+# ═══════════════════════════════════════════════════════════════════════════════
+function Menu-FixAll {
+    Show-Header
+
+    Draw-BoxTop
+    Draw-BoxTitle "Fix Everything"
+    Draw-BoxEmpty
+    Draw-BoxLine "  This will apply ALL fixes in one go:"
+    Draw-BoxLine "    - Flush DNS" -Color DarkGray
+    Draw-BoxLine "    - Clean all Antigravity caches" -Color DarkGray
+    Draw-BoxLine "    - Clean browser cache/cookies/storage" -Color DarkGray
+    Draw-BoxLine "    - Fix browser lock files" -Color DarkGray
+    Draw-BoxLine "    - Clean shader caches" -Color DarkGray
+    Draw-BoxLine "    - Test connectivity" -Color DarkGray
+    Draw-BoxEmpty
+    Draw-BoxBot
+
+    Write-Host ""
+    $yn = Read-Choice "  Run? [y/N] "
+    if ($yn -notmatch "^[Yy]$") {
+        Write-Host "  Cancelled." -ForegroundColor Yellow
+        Wait-Key; return
+    }
+
+    Write-Host ""
+    Write-Host "  Step 1/6: Flushing DNS..." -ForegroundColor Cyan
+    if (Flush-DnsCache) { Write-Host "  OK   DNS flushed" -ForegroundColor Green }
+    else                { Write-Host "  !!   DNS flush skipped" -ForegroundColor Yellow }
+
+    Write-Host "  Step 2/6: Cleaning Antigravity caches..." -ForegroundColor Cyan
+    foreach ($d in @("brain","conversations","browser_recordings","context_state","code_tracker","implicit","annotations","knowledge","playground","scratch")) {
+        Clean-Dir "$ANTIGRAVITY_DIR\$d" $d
+    }
+
+    Write-Host "  Step 3/6: Cleaning browser cache..." -ForegroundColor Cyan
+    foreach ($d in @("Cache","Code Cache","GPUCache","DawnGraphiteCache","DawnWebGPUCache","Service Worker","blob_storage","Sessions")) {
+        Clean-Dir "$BP_DEF\$d" $d
+    }
+    foreach ($d in @("ShaderCache","GrShaderCache","GraphiteDawnCache")) {
+        Clean-Dir "$BROWSER_PROF_DIR\$d" $d
+    }
+
+    Write-Host "  Step 4/6: Cleaning cookies & storage..." -ForegroundColor Cyan
+    foreach ($f in @("Cookies","Cookies-journal","Safe Browsing Cookies","Safe Browsing Cookies-journal")) {
+        Clean-File "$BP_DEF\$f" $f
+    }
+    foreach ($d in @("Local Storage","Session Storage","WebStorage")) {
+        Clean-Dir "$BP_DEF\$d" $d
+    }
+
+    Write-Host "  Step 5/6: Fixing lock files..." -ForegroundColor Cyan
+    Clean-File "$BP_DEF\SingletonLock" "SingletonLock"
+    Clean-File "$BP_DEF\LOCK" "LOCK"
+    Clean-File "$BROWSER_PROF_DIR\BrowserMetrics-spare.pma" "BrowserMetrics"
+
+    Write-Host "  Step 6/6: Testing connectivity..." -ForegroundColor Cyan
+    Test-Endpoint "https://www.google.com" "NET  "
+    Test-Endpoint "https://gemini.google.com" "GEM  "
+
+    Write-Host ""
+    Draw-BoxTop
+    Draw-BoxEmpty
+    Draw-BoxLine "  All fixes applied!" -Color Green
+    Draw-BoxLine "  Restart Antigravity to apply changes." -Color DarkGray
+    Draw-BoxEmpty
+    Draw-BoxBot
+    Wait-Key
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Quick mode
 # ═══════════════════════════════════════════════════════════════════════════════
 function Run-Quick {
@@ -760,12 +1201,9 @@ function Run-Quick {
         Write-Host "  DRY RUN - no files will be deleted." -ForegroundColor Yellow
         Write-Host ""
     }
-    Clean-Dir "$ANTIGRAVITY_DIR\brain" "Brain Artifacts"
-    Clean-Dir "$ANTIGRAVITY_DIR\browser_recordings" "Browser Recordings"
-    Clean-Dir "$ANTIGRAVITY_DIR\conversations" "Conversations"
-    Clean-Dir "$ANTIGRAVITY_DIR\context_state" "Context State"
-    Clean-Dir "$ANTIGRAVITY_DIR\code_tracker" "Code Tracker"
-    Clean-Dir "$ANTIGRAVITY_DIR\implicit" "Implicit Memory"
+    foreach ($d in @("brain","conversations","browser_recordings","context_state","code_tracker","implicit","annotations","knowledge","playground","scratch")) {
+        Clean-Dir "$ANTIGRAVITY_DIR\$d" $d
+    }
     if (-not $DryRun) {
         Write-Host ""
         Write-Host "  All cache cleaned." -ForegroundColor Green
@@ -783,12 +1221,15 @@ function Main-Menu {
         Draw-BoxTop
         Draw-BoxTitle "Main Menu"
         Draw-BoxEmpty
-        Draw-BoxLine "  [1]  Cache Cleaner          Clean cache"
-        Draw-BoxLine "  [2]  Usage Dashboard         View statistics"
-        Draw-BoxLine "  [3]  Reset Timer             Next usage reset"
-        Draw-BoxLine "  [4]  Account Switcher        Manage profiles"
-        Draw-BoxLine "  [5]  Network Fixer           Fix DNS & 403s"
-        Draw-BoxLine "  [6]  Browser Backup          Backup browsers"
+        Draw-BoxLine "  [1]  Cache Cleaner          Clean Antigravity caches"
+        Draw-BoxLine "  [2]  Browser Toolkit        Fix AG's built-in browser"
+        Draw-BoxLine "  [3]  Network Fixer          DNS, connectivity, 403"
+        Draw-BoxLine "  [4]  Troubleshooter         Diagnose & auto-fix"
+        Draw-BoxLine "  [5]  Usage & Rate Limits    Stats + reset timer"
+        Draw-BoxLine "  [6]  Account Switcher       Manage profiles"
+        Draw-BoxLine "  [7]  Browser Backup         Backup system browsers"
+        Draw-BoxEmpty
+        Draw-BoxLine "  [8]  Fix Everything         One-click comprehensive fix" -Color Green
         Draw-BoxEmpty
         Draw-BoxLine "  [0]  Exit" -Color DarkGray
         Draw-BoxEmpty
@@ -802,11 +1243,13 @@ function Main-Menu {
 
         switch ($choice) {
             "1" { Menu-Cleaner }
-            "2" { Menu-Usage }
-            "3" { Menu-Reset }
-            "4" { Menu-Accounts }
-            "5" { Menu-Network }
-            "6" { Menu-Backup }
+            "2" { Menu-Browser }
+            "3" { Menu-Network }
+            "4" { Menu-Troubleshoot }
+            "5" { Menu-Usage }
+            "6" { Menu-Accounts }
+            "7" { Menu-Backup }
+            "8" { Menu-FixAll }
             { $_ -in "0","q","Q" } {
                 Write-Host ""
                 Write-Host "  Goodbye!" -ForegroundColor Cyan
