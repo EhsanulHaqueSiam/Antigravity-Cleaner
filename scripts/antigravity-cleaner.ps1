@@ -27,13 +27,45 @@ $Host.UI.RawUI.WindowTitle = "Antigravity Toolkit v3.1"
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Configuration
 # ═══════════════════════════════════════════════════════════════════════════════
-$VERSION          = "3.1"
-$GEMINI_DIR       = "$env:USERPROFILE\.gemini"
+$VERSION = "3.1"
+$BOX_W   = 76
+
+# Discover the .gemini directory — check multiple possible locations
+$GEMINI_DIR = ""
+$_candidates = @()
+
+# 1. Official override: GEMINI_CLI_HOME environment variable
+if ($env:GEMINI_CLI_HOME -and (Test-Path $env:GEMINI_CLI_HOME)) {
+    $_candidates += $env:GEMINI_CLI_HOME
+}
+
+# 2. Standard locations
+$_candidates += "$env:USERPROFILE\.gemini"
+if ($env:APPDATA)     { $_candidates += "$env:APPDATA\.gemini" }
+if ($env:LOCALAPPDATA) { $_candidates += "$env:LOCALAPPDATA\.gemini" }
+if ($env:APPDATA)     { $_candidates += "$env:APPDATA\gemini" }
+if ($env:LOCALAPPDATA) { $_candidates += "$env:LOCALAPPDATA\gemini" }
+if ($env:HOMEDRIVE -and $env:HOMEPATH) {
+    $_candidates += "$env:HOMEDRIVE$env:HOMEPATH\.gemini"
+}
+if ($env:HOME -and $env:HOME -ne $env:USERPROFILE) {
+    $_candidates += "$env:HOME\.gemini"
+}
+
+foreach ($_c in $_candidates) {
+    if (Test-Path $_c) {
+        $GEMINI_DIR = $_c
+        break
+    }
+}
+
+# Fallback if nothing found — use the standard path for error messaging
+if ([string]::IsNullOrEmpty($GEMINI_DIR)) { $GEMINI_DIR = "$env:USERPROFILE\.gemini" }
+
 $ANTIGRAVITY_DIR  = "$GEMINI_DIR\antigravity"
 $BROWSER_PROF_DIR = "$GEMINI_DIR\antigravity-browser-profile"
 $BP_DEF           = "$BROWSER_PROF_DIR\Default"
 $BACKUP_DIR       = "$GEMINI_DIR\backups"
-$BOX_W            = 76
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Help
@@ -67,8 +99,16 @@ One-liner:
 # ═══════════════════════════════════════════════════════════════════════════════
 if (-not (Test-Path $GEMINI_DIR)) {
     Write-Host ""
-    Write-Host "  Antigravity cache directory not found at $GEMINI_DIR" -ForegroundColor Red
-    Write-Host "  Is Antigravity installed?" -ForegroundColor DarkGray
+    Write-Host "  Antigravity data directory not found." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Searched these locations:" -ForegroundColor DarkGray
+    foreach ($_c in $_candidates) {
+        $mark = if (Test-Path $_c) { "+" } else { "-" }
+        Write-Host "    $mark  $_c" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    Write-Host "  Is Antigravity installed? If your data is elsewhere," -ForegroundColor DarkGray
+    Write-Host "  set GEMINI_CLI_HOME to point to it." -ForegroundColor DarkGray
     Write-Host ""
     exit 1
 }
@@ -918,7 +958,7 @@ function Fetch-AllQuotas {
     $CLIENT_SECRET = "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"
     $TOKEN_URL = "https://oauth2.googleapis.com/token"
     $QUOTA_URL = "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
-    $BAR_W = 20
+    $BAR_W = 10
 
     $SKIP_PREFIXES = @("tab_", "chat_")
     $GROUP_DEFS = @(
@@ -1044,14 +1084,16 @@ function Fetch-AllQuotas {
                 $color = if ($null -eq $rf) { "r" } elseif ($fv -lt 0.3) { "o" } elseif ($fv -lt 0.6) { "y" } else { "g" }
 
                 $resetStr = ""
-                if (($null -eq $rf -or $fv -lt 1.0) -and $rt) {
+                if ($rt) {
                     try {
                         $rdt = [datetime]::Parse($rt).ToUniversalTime()
                         $secs = [int]($rdt - [datetime]::UtcNow).TotalSeconds
                         if ($secs -gt 0) {
                             $h = [math]::Floor($secs / 3600)
                             $m = [math]::Floor(($secs % 3600) / 60)
-                            $resetStr = if ($h -gt 0) { "${h}h ${m}m" } else { "${m}m" }
+                            $localReset = $rdt.ToLocalTime().ToString("HH:mm")
+                            $countdown = if ($h -gt 0) { "${h}h ${m}m" } else { "${m}m" }
+                            $resetStr = "$countdown ($localReset)"
                         }
                     } catch {}
                 }
@@ -1066,15 +1108,18 @@ function Fetch-AllQuotas {
 }
 
 function Menu-Accounts {
-    # Find accounts JSON
+    # Find accounts JSON — check all known Windows + cross-platform locations
     $acctJson = ""
-    $p1 = "$env:USERPROFILE\.config\opencode\antigravity-accounts.json"
-    $p2 = "$env:USERPROFILE\.config\antigravity-proxy\accounts.json"
-    # Also check Linux-style paths under WSL home or APPDATA
-    $p3 = "$env:APPDATA\opencode\antigravity-accounts.json"
-    $p4 = "$env:APPDATA\antigravity-proxy\accounts.json"
-    foreach ($p in @($p1, $p2, $p3, $p4)) {
-        if (Test-Path $p) { $acctJson = $p; break }
+    $_acctPaths = @(
+        "$env:APPDATA\opencode\antigravity-accounts.json"
+        "$env:APPDATA\antigravity-proxy\accounts.json"
+        "$env:LOCALAPPDATA\opencode\antigravity-accounts.json"
+        "$env:LOCALAPPDATA\antigravity-proxy\accounts.json"
+        "$env:USERPROFILE\.config\opencode\antigravity-accounts.json"
+        "$env:USERPROFILE\.config\antigravity-proxy\accounts.json"
+    )
+    foreach ($p in $_acctPaths) {
+        if ($p -and (Test-Path $p)) { $acctJson = $p; break }
     }
 
     if ([string]::IsNullOrEmpty($acctJson)) {
@@ -1084,9 +1129,10 @@ function Menu-Accounts {
         Draw-BoxEmpty
         Draw-BoxLine "  No accounts found." -Color Yellow
         Draw-BoxEmpty
-        Draw-BoxLine "  Expected config at:" -Color DarkGray
-        Draw-BoxLine "    ~/.config/opencode/antigravity-accounts.json" -Color DarkGray
-        Draw-BoxLine "    ~/.config/antigravity-proxy/accounts.json" -Color DarkGray
+        Draw-BoxLine "  Expected config at one of:" -Color DarkGray
+        Draw-BoxLine "    %APPDATA%\opencode\antigravity-accounts.json" -Color DarkGray
+        Draw-BoxLine "    %APPDATA%\antigravity-proxy\accounts.json" -Color DarkGray
+        Draw-BoxLine "    %USERPROFILE%\.config\opencode\antigravity-accounts.json" -Color DarkGray
         Draw-BoxEmpty
         Draw-BoxBot
         Wait-Key; return

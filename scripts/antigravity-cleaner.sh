@@ -11,12 +11,22 @@ read -r -t 0.1 -n 10000 _discard 2>/dev/null || true
 set +e
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
-GEMINI_DIR="$HOME/.gemini"
+VERSION="3.1"
+
+# Discover .gemini directory — respect GEMINI_CLI_HOME override
+GEMINI_DIR=""
+if [ -n "$GEMINI_CLI_HOME" ] && [ -d "$GEMINI_CLI_HOME" ]; then
+    GEMINI_DIR="$GEMINI_CLI_HOME"
+elif [ -d "$HOME/.gemini" ]; then
+    GEMINI_DIR="$HOME/.gemini"
+else
+    GEMINI_DIR="$HOME/.gemini"  # fallback for error message
+fi
+
 AG_DIR="$GEMINI_DIR/antigravity"
 BP_DIR="$GEMINI_DIR/antigravity-browser-profile"
 BP_DEF="$BP_DIR/Default"
 BACKUP_DIR="$GEMINI_DIR/backups"
-VERSION="3.1"
 
 FLAG_QUICK=false
 FLAG_DRY_RUN=false
@@ -779,7 +789,7 @@ CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleuserconte
 CLIENT_SECRET = "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"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 QUOTA_URL = "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
-BAR_W = 20
+BAR_W = 10
 
 def exchange_token(refresh_token):
     data = urlencode({
@@ -817,7 +827,9 @@ def format_reset(rt):
         if secs <= 0:
             return ""
         h, m = secs // 3600, (secs % 3600) // 60
-        return f"{h}h {m}m" if h > 0 else f"{m}m"
+        local_reset = rdt.astimezone().strftime("%H:%M")
+        countdown = f"{h}h {m}m" if h > 0 else f"{m}m"
+        return f"{countdown} ({local_reset})"
     except:
         return ""
 
@@ -887,7 +899,7 @@ for i, acct in enumerate(accounts):
             fill = max(0, min(BAR_W, round(fv * BAR_W)))
             empty = BAR_W - fill
             color = "r" if rf is None else ("o" if fv < 0.3 else ("y" if fv < 0.6 else "g"))
-            rs = format_reset(rt) if (rf is None or fv < 1.0) else ""
+            rs = format_reset(rt) if rt else ""
             print(f"MODEL:{name}\t{fill}\t{empty}\t{pct}\t{rs}\t{color}")
         print("GROUPEND")
 print("END")
@@ -1148,7 +1160,10 @@ done
 
 # ═══════════════════════════════════════════════════════════════════════════════
 if [ ! -d "$GEMINI_DIR" ]; then
-    printf "\n  ${RED}Antigravity not found at %s${RST}\n  ${DGRAY}Is it installed?${RST}\n\n" "$GEMINI_DIR"; exit 1
+    printf "\n  ${RED}Antigravity data directory not found.${RST}\n"
+    printf "  ${DGRAY}Checked: %s${RST}\n" "$GEMINI_DIR"
+    printf "  ${DGRAY}If your data is elsewhere, set GEMINI_CLI_HOME to point to it.${RST}\n\n"
+    exit 1
 fi
 $FLAG_QUICK && { run_quick; exit 0; }
 main_menu
