@@ -35,18 +35,29 @@ $GEMINI_DIR = ""
 $_candidates = @()
 
 # 1. Official override: GEMINI_CLI_HOME environment variable
-if ($env:GEMINI_CLI_HOME -and (Test-Path $env:GEMINI_CLI_HOME)) {
-    $_candidates += $env:GEMINI_CLI_HOME
+if ($env:GEMINI_CLI_HOME) { $_candidates += $env:GEMINI_CLI_HOME }
+
+# 2. Standard home location
+$_candidates += "$env:USERPROFILE\.gemini"
+
+# 3. Windows AppData locations (with and without dot prefix)
+if ($env:APPDATA) {
+    $_candidates += "$env:APPDATA\.gemini"
+    $_candidates += "$env:APPDATA\gemini"
+}
+if ($env:LOCALAPPDATA) {
+    $_candidates += "$env:LOCALAPPDATA\.gemini"
+    $_candidates += "$env:LOCALAPPDATA\gemini"
+    $_candidates += "$env:LOCALAPPDATA\Google\gemini"
 }
 
-# 2. Standard locations
-$_candidates += "$env:USERPROFILE\.gemini"
-if ($env:APPDATA)     { $_candidates += "$env:APPDATA\.gemini" }
-if ($env:LOCALAPPDATA) { $_candidates += "$env:LOCALAPPDATA\.gemini" }
-if ($env:APPDATA)     { $_candidates += "$env:APPDATA\gemini" }
-if ($env:LOCALAPPDATA) { $_candidates += "$env:LOCALAPPDATA\gemini" }
+# 4. ProgramData (system-wide installs)
+if ($env:ProgramData) { $_candidates += "$env:ProgramData\gemini" }
+
+# 5. Alternate home paths (HOMEDRIVE+HOMEPATH, $HOME)
 if ($env:HOMEDRIVE -and $env:HOMEPATH) {
-    $_candidates += "$env:HOMEDRIVE$env:HOMEPATH\.gemini"
+    $altHome = "$env:HOMEDRIVE$env:HOMEPATH"
+    if ($altHome -ne $env:USERPROFILE) { $_candidates += "$altHome\.gemini" }
 }
 if ($env:HOME -and $env:HOME -ne $env:USERPROFILE) {
     $_candidates += "$env:HOME\.gemini"
@@ -1117,6 +1128,8 @@ function Menu-Accounts {
         "$env:LOCALAPPDATA\antigravity-proxy\accounts.json"
         "$env:USERPROFILE\.config\opencode\antigravity-accounts.json"
         "$env:USERPROFILE\.config\antigravity-proxy\accounts.json"
+        "$GEMINI_DIR\accounts.json"
+        "$ANTIGRAVITY_DIR\accounts.json"
     )
     foreach ($p in $_acctPaths) {
         if ($p -and (Test-Path $p)) { $acctJson = $p; break }
@@ -1129,10 +1142,10 @@ function Menu-Accounts {
         Draw-BoxEmpty
         Draw-BoxLine "  No accounts found." -Color Yellow
         Draw-BoxEmpty
-        Draw-BoxLine "  Expected config at one of:" -Color DarkGray
-        Draw-BoxLine "    %APPDATA%\opencode\antigravity-accounts.json" -Color DarkGray
-        Draw-BoxLine "    %APPDATA%\antigravity-proxy\accounts.json" -Color DarkGray
-        Draw-BoxLine "    %USERPROFILE%\.config\opencode\antigravity-accounts.json" -Color DarkGray
+        Draw-BoxLine "  Searched these locations:" -Color DarkGray
+        foreach ($_ap in $_acctPaths) {
+            if ($_ap) { Draw-BoxLine "    $_ap" -Color DarkGray }
+        }
         Draw-BoxEmpty
         Draw-BoxBot
         Wait-Key; return

@@ -13,15 +13,33 @@ set +e
 # ─── Paths ────────────────────────────────────────────────────────────────────
 VERSION="3.1"
 
-# Discover .gemini directory — respect GEMINI_CLI_HOME override
+# Discover .gemini directory — check multiple possible locations
 GEMINI_DIR=""
-if [ -n "$GEMINI_CLI_HOME" ] && [ -d "$GEMINI_CLI_HOME" ]; then
-    GEMINI_DIR="$GEMINI_CLI_HOME"
-elif [ -d "$HOME/.gemini" ]; then
-    GEMINI_DIR="$HOME/.gemini"
+_gemini_candidates=()
+
+# 1. Official override
+[ -n "$GEMINI_CLI_HOME" ] && _gemini_candidates+=("$GEMINI_CLI_HOME")
+
+# 2. Standard home location (all platforms)
+_gemini_candidates+=("$HOME/.gemini")
+
+# 3. XDG / platform-specific locations
+if [[ "$OSTYPE" == darwin* ]]; then
+    _gemini_candidates+=("$HOME/Library/Application Support/gemini")
+    _gemini_candidates+=("$HOME/Library/Application Support/.gemini")
 else
-    GEMINI_DIR="$HOME/.gemini"  # fallback for error message
+    [ -n "$XDG_CONFIG_HOME" ] && _gemini_candidates+=("$XDG_CONFIG_HOME/gemini" "$XDG_CONFIG_HOME/.gemini")
+    [ -n "$XDG_DATA_HOME" ]   && _gemini_candidates+=("$XDG_DATA_HOME/gemini" "$XDG_DATA_HOME/.gemini")
+    _gemini_candidates+=("$HOME/.config/gemini")
+    _gemini_candidates+=("$HOME/.local/share/gemini")
 fi
+
+for _gc in "${_gemini_candidates[@]}"; do
+    [ -d "$_gc" ] && { GEMINI_DIR="$_gc"; break; }
+done
+
+# Fallback for error messaging
+[ -z "$GEMINI_DIR" ] && GEMINI_DIR="$HOME/.gemini"
 
 AG_DIR="$GEMINI_DIR/antigravity"
 BP_DIR="$GEMINI_DIR/antigravity-browser-profile"
@@ -746,19 +764,38 @@ menu_usage() {
 #  6. Account Dashboard (API-based per-model quota)
 # ═══════════════════════════════════════════════════════════════════════════════
 menu_accounts() {
-    # Find accounts JSON
-    local acct_json=""
-    [ -f "$HOME/.config/opencode/antigravity-accounts.json" ] && acct_json="$HOME/.config/opencode/antigravity-accounts.json"
-    [ -z "$acct_json" ] && [ -f "$HOME/.config/antigravity-proxy/accounts.json" ] && acct_json="$HOME/.config/antigravity-proxy/accounts.json"
+    # Find accounts JSON — check all known locations per platform
+    local acct_json="" _acct_paths=()
+
+    # XDG / Linux standard
+    local _xdg="${XDG_CONFIG_HOME:-$HOME/.config}"
+    _acct_paths+=("$_xdg/opencode/antigravity-accounts.json")
+    _acct_paths+=("$_xdg/antigravity-proxy/accounts.json")
+
+    # macOS Application Support
+    if [[ "$OSTYPE" == darwin* ]]; then
+        local _as="$HOME/Library/Application Support"
+        _acct_paths+=("$_as/opencode/antigravity-accounts.json")
+        _acct_paths+=("$_as/antigravity-proxy/accounts.json")
+    fi
+
+    # Also check inside .gemini dir itself
+    _acct_paths+=("$GEMINI_DIR/accounts.json")
+    _acct_paths+=("$GEMINI_DIR/antigravity/accounts.json")
+
+    for _ap in "${_acct_paths[@]}"; do
+        [ -f "$_ap" ] && { acct_json="$_ap"; break; }
+    done
 
     if [[ -z "$acct_json" ]]; then
         draw_header
         box_top; box_title "Account Dashboard"; box_empty
         box_line "  ${YELLOW}No accounts found.${RST}"
         box_empty
-        box_line "  ${DGRAY}Expected config at:${RST}"
-        box_line "  ${DGRAY}  ~/.config/opencode/antigravity-accounts.json${RST}"
-        box_line "  ${DGRAY}  ~/.config/antigravity-proxy/accounts.json${RST}"
+        box_line "  ${DGRAY}Searched these locations:${RST}"
+        for _ap in "${_acct_paths[@]}"; do
+            box_line "  ${DGRAY}  ${_ap}${RST}"
+        done
         box_empty; box_bot
         wait_key; return
     fi
@@ -1160,9 +1197,12 @@ done
 
 # ═══════════════════════════════════════════════════════════════════════════════
 if [ ! -d "$GEMINI_DIR" ]; then
-    printf "\n  ${RED}Antigravity data directory not found.${RST}\n"
-    printf "  ${DGRAY}Checked: %s${RST}\n" "$GEMINI_DIR"
-    printf "  ${DGRAY}If your data is elsewhere, set GEMINI_CLI_HOME to point to it.${RST}\n\n"
+    printf "\n  ${RED}Antigravity data directory not found.${RST}\n\n"
+    printf "  ${DGRAY}Searched these locations:${RST}\n"
+    for _gc in "${_gemini_candidates[@]}"; do
+        printf "  ${DGRAY}  -  %s${RST}\n" "$_gc"
+    done
+    printf "\n  ${DGRAY}If your data is elsewhere, set GEMINI_CLI_HOME to point to it.${RST}\n\n"
     exit 1
 fi
 $FLAG_QUICK && { run_quick; exit 0; }
